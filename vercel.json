@@ -1,0 +1,24 @@
+{
+  "builds": [
+    {
+      "src": "app.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "app.py"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/trigger-verification",
+      "schedule": "0 4 * * 1-5"
+    },
+    {
+      "path": "/api/trigger-prediction",
+      "schedule": "0 6 * * 1-5"
+    }
+  ]
+}

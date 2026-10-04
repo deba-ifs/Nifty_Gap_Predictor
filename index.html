@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nifty 50 Quant Predictor (12:00 PM Execution Window)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#3b82f6', 600: '#2563eb' },
+            darkbg: '#0b0f19',
+            cardbg: '#111827',
+            bordercol: '#1f2937'
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-darkbg text-slate-100 min-h-screen font-sans flex flex-col justify-between">
+
+  <!-- Header -->
+  <header class="border-b border-bordercol bg-cardbg/80 backdrop-blur sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="p-2 bg-blue-600/20 text-blue-400 rounded-lg border border-blue-500/30">
+        <i class="fa-solid fa-chart-line text-xl"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold tracking-wide">NIFTY 50 QUANTITATIVE PREDICTOR</h1>
+        <p class="text-xs text-slate-400">11:30 AM Auto-Forecast Signal for 12:00 PM Trade Entry</p>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-4">
+      <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping mr-2"></span> System Active
+      </span>
+      <button onclick="fetchDashboardData()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded border border-slate-700 transition">
+        <i class="fa-solid fa-rotate mr-1"></i> Refresh
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-6 py-8 w-full space-y-8">
+
+    <!-- Action Buttons Bar -->
+    <div class="flex flex-wrap items-center justify-between gap-4 bg-cardbg p-4 rounded-xl border border-bordercol">
+      <div class="text-xs text-slate-400">
+        <i class="fa-solid fa-clock text-blue-400 mr-1"></i> Automated Schedule: <strong>09:30 AM IST</strong> (Verify Actuals) | <strong>11:30 AM IST</strong> (Generate 12:00 PM Trade Signal)
+      </div>
+      <div class="flex space-x-3">
+        <button onclick="triggerPrediction()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center">
+          <i class="fa-solid fa-bolt mr-2"></i> Run 11:30 AM Signal
+        </button>
+        <button onclick="triggerVerification()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center">
+          <i class="fa-solid fa-brain mr-2"></i> Verify Actuals & Enhance Model
+        </button>
+      </div>
+    </div>
+
+    <!-- Grid 1: Forecast & Verification -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Tomorrow's Main Forecast Card -->
+      <div class="lg:col-span-2 bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl flex flex-col justify-between">
+        <div>
+          <div class="flex justify-between items-start mb-6">
+            <div>
+              <span class="text-xs uppercase tracking-wider font-semibold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded">12:00 PM Trading Target</span>
+              <h2 id="predTargetDate" class="text-2xl font-black mt-2">--</h2>
+            </div>
+            <div id="predDirBadge" class="px-4 py-1.5 rounded-full text-sm font-bold border">
+              --
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 my-6 bg-slate-900/50 p-5 rounded-xl border border-slate-800">
+            <div>
+              <p class="text-xs text-slate-400 uppercase">Predicted Opening Price</p>
+              <p id="predOpenPrice" class="text-4xl font-extrabold text-blue-400 mt-1">₹--</p>
+              <p class="text-xs text-slate-500 mt-1">Baseline Close: <span id="predBaselineClose">₹--</span></p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 uppercase">Implied 1-Sigma Channel (Rule of 16)</p>
+              <p id="impliedRange" class="text-lg font-bold text-slate-200 mt-2">₹-- — ₹--</p>
+              <p class="text-xs text-slate-500 mt-1">India VIX Close: <span id="vixVal">--</span></p>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Directional Probability Distribution</p>
+            
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-emerald-400 font-semibold">Gap Up (> +0.25%)</span>
+                <span id="probUpText" class="font-bold">--%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-2">
+                <div id="probUpBar" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300 font-semibold">Flat (-0.25% to +0.25%)</span>
+                <span id="probFlatText" class="font-bold">--%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-2">
+                <div id="probFlatBar" class="bg-slate-400 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-rose-400 font-semibold">Gap Down (< -0.25%)</span>
+                <span id="probDownText" class="font-bold">--%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-2">
+                <div id="probDownBar" class="bg-rose-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="text-xs text-slate-500 mt-6 pt-4 border-t border-slate-800 flex justify-between">
+          <span>Engine Model: Calibrated Gradient Boosting</span>
+          <span>Adaptive Volatility Normalized</span>
+        </div>
+      </div>
+
+      <!-- Verification Card -->
+      <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl flex flex-col justify-between">
+        <div>
+          <span class="text-xs uppercase tracking-wider font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded">Daily Ground-Truth Verification</span>
+          <h3 id="verTradeDate" class="text-lg font-bold mt-3">--</h3>
+
+          <div class="mt-6 space-y-4">
+            <div id="verHitCard" class="p-4 rounded-xl border flex items-center justify-between">
+              <div>
+                <p class="text-xs text-slate-400">Direction Match</p>
+                <p id="verHitStatus" class="text-sm font-bold mt-0.5">--</p>
+              </div>
+              <div id="verHitIcon" class="text-2xl">
+                <i class="fa-solid fa-circle-question text-slate-600"></i>
+              </div>
+            </div>
+
+            <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
+              <div class="flex justify-between">
+                <span class="text-slate-400">Predicted Open:</span>
+                <span id="verPredOpen" class="font-bold">₹--</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Realized Actual Open:</span>
+                <span id="verActualOpen" class="font-bold text-emerald-400">₹--</span>
+              </div>
+              <div class="flex justify-between border-t border-slate-800 pt-2">
+                <span class="text-slate-400">Absolute Error:</span>
+                <span id="verError" class="font-bold text-amber-400">₹--</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 p-3 bg-blue-900/20 border border-blue-800/40 rounded-lg text-xs text-blue-300">
+          <i class="fa-solid fa-circle-info mr-1"></i> Opening errors recorded at 09:30 AM automatically retrain model weights.
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Logs Table -->
+    <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl">
+      <h3 class="text-base font-bold mb-4 flex items-center">
+        <i class="fa-solid fa-database text-blue-400 mr-2"></i> Model Enhancement & Adaptive Learning History
+      </h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-900 text-slate-400 uppercase border-b border-slate-800">
+            <tr>
+              <th class="p-3">Training Timestamp</th>
+              <th class="p-3">Sample Set Size</th>
+              <th class="p-3">In-Sample MAE</th>
+              <th class="p-3">In-Sample Accuracy</th>
+              <th class="p-3">Trigger / Enhancement Notes</th>
+            </tr>
+          </thead>
+          <tbody id="logsTableBody" class="divide-y divide-slate-800">
+            <tr><td colspan="5" class="p-4 text-center text-slate-500">Loading learning logs...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-bordercol bg-cardbg px-6 py-4 text-center text-xs text-slate-500">
+    Quantitative Financial Modeling Framework • Auto-calibrated with daily NSE open price actuals.
+  </footer>
+
+  <script>
+    async function fetchDashboardData() {
+      try {
+        const res = await fetch('/api/dashboard-data');
+        const data = await res.json();
+        
+        if (data.latest_prediction && data.latest_prediction.target_date) {
+          const p = data.latest_prediction;
+          document.getElementById('predTargetDate').innerText = p.target_date;
+          document.getElementById('predOpenPrice').innerText = `₹${p.predicted_open.toLocaleString()}`;
+          document.getElementById('predBaselineClose').innerText = `₹${p.baseline_close.toLocaleString()}`;
+          document.getElementById('impliedRange').innerText = `₹${p.implied_lower.toLocaleString()} — ₹${p.implied_upper.toLocaleString()}`;
+          document.getElementById('vixVal').innerText = p.vix_close;
+
+          const badge = document.getElementById('predDirBadge');
+          badge.innerText = p.predicted_direction.toUpperCase();
+          if (p.predicted_direction === 'Gap Up') {
+            badge.className = "px-4 py-1.5 rounded-full text-sm font-bold bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+          } else if (p.predicted_direction === 'Gap Down') {
+            badge.className = "px-4 py-1.5 rounded-full text-sm font-bold bg-rose-500/10 text-rose-400 border-rose-500/30";
+          } else {
+            badge.className = "px-4 py-1.5 rounded-full text-sm font-bold bg-slate-500/10 text-slate-300 border-slate-500/30";
+          }
+
+          document.getElementById('probUpText').innerText = `${(p.prob_gap_up * 100).toFixed(1)}%`;
+          document.getElementById('probUpBar').style.width = `${p.prob_gap_up * 100}%`;
+
+          document.getElementById('probFlatText').innerText = `${(p.prob_flat * 100).toFixed(1)}%`;
+          document.getElementById('probFlatBar').style.width = `${p.prob_flat * 100}%`;
+
+          document.getElementById('probDownText').innerText = `${(p.prob_gap_down * 100).toFixed(1)}%`;
+          document.getElementById('probDownBar').style.width = `${p.prob_gap_down * 100}%`;
+        }
+
+        if (data.latest_verification && data.latest_verification.trade_date) {
+          const v = data.latest_verification;
+          document.getElementById('verTradeDate').innerText = `Verified Date: ${v.trade_date}`;
+          document.getElementById('verPredOpen').innerText = `₹${v.predicted_open.toLocaleString()}`;
+          document.getElementById('verActualOpen').innerText = `₹${v.actual_open.toLocaleString()}`;
+          document.getElementById('verError').innerText = `₹${v.error_rs.toLocaleString()}`;
+
+          const statusText = document.getElementById('verHitStatus');
+          const hitIcon = document.getElementById('verHitIcon');
+          const hitCard = document.getElementById('verHitCard');
+
+          if (v.hit) {
+            statusText.innerText = `ACCURATE (${v.actual_direction})`;
+            statusText.className = "text-sm font-bold mt-0.5 text-emerald-400";
+            hitIcon.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400"></i>`;
+            hitCard.className = "p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-between";
+          } else {
+            statusText.innerText = `MISMATCH (Actual: ${v.actual_direction})`;
+            statusText.className = "text-sm font-bold mt-0.5 text-rose-400";
+            hitIcon.innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-400"></i>`;
+            hitCard.className = "p-4 rounded-xl border border-rose-500/30 bg-rose-500/10 flex items-center justify-between";
+          }
+        }
+
+        if (data.model_enhancement_logs) {
+          const tbody = document.getElementById('logsTableBody');
+          tbody.innerHTML = '';
+          data.model_enhancement_logs.forEach(log => {
+            tbody.innerHTML += `
+              <tr class="hover:bg-slate-800/50">
+                <td class="p-3 font-mono">${log[0]}</td>
+                <td class="p-3">${log[1]} days</td>
+                <td class="p-3 text-amber-400 font-semibold">₹${log[2].toFixed(2)}</td>
+                <td class="p-3 text-emerald-400 font-semibold">${(log[3] * 100).toFixed(1)}%</td>
+                <td class="p-3 text-slate-300">${log[4]}</td>
+              </tr>
+            `;
+          });
+        }
+
+      } catch (err) {
+        console.error("Failed fetching dashboard data:", err);
+      }
+    }
+
+    async function triggerPrediction() {
+      await fetch('/api/trigger-prediction', { method: 'POST' });
+      setTimeout(fetchDashboardData, 2000);
+    }
+
+    async function triggerVerification() {
+      await fetch('/api/trigger-verification', { method: 'POST' });
+      setTimeout(fetchDashboardData, 3000);
+    }
+
+    fetchDashboardData();
+  </script>
+</body>
+</html>

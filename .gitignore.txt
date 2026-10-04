@@ -1,0 +1,23 @@
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Database Files
+*.db
+*.sqlite3
+
+# OS Specific
+.DS_Store
+Thumbs.db
+
+# Deployment & IDE
+.vercel/
+.idea/
+.vscode/

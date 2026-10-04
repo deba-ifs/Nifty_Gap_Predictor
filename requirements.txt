@@ -1,0 +1,7 @@
+fastapi>=0.110.0
+uvicorn>=0.28.0
+apscheduler>=3.10.4
+pandas>=2.2.0
+numpy>=1.26.0
+yfinance>=0.2.37
+scikit-learn>=1.4.0
