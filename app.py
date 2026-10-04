@@ -15,7 +15,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostin
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score, mean_absolute_error
 
-# Base Directory & DB Path Setup
+# Base Directory & Persistent DB Setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = "/tmp/nifty_quant.db" if os.getenv("VERCEL") else os.path.join(BASE_DIR, "nifty_quant.db")
 
@@ -162,6 +162,7 @@ class AdaptiveQuantEngine:
         return data
 
     def train_and_enhance(self, notes: str = "Initial Training"):
+        """Retrains the model using historical data combined with all verified live database records."""
         df_raw = self.fetch_historical_data()
         df_feat = self.engineer_features(df_raw)
         
@@ -170,13 +171,14 @@ class AdaptiveQuantEngine:
         y_cls = clean_df["Target_Gap_Class"].astype(int)
         y_gap = clean_df["Target_Gap_Pct"]
 
-        base_cls = HistGradientBoostingClassifier(max_iter=100, max_depth=3, learning_rate=0.03, random_state=42)
+        base_cls = HistGradientBoostingClassifier(max_iter=120, max_depth=3, learning_rate=0.03, random_state=42)
         self.cls_model = CalibratedClassifierCV(estimator=base_cls, method="sigmoid", cv=3)
         self.cls_model.fit(X, y_cls)
 
-        self.reg_model = HistGradientBoostingRegressor(max_iter=100, max_depth=3, learning_rate=0.03, random_state=42)
+        self.reg_model = HistGradientBoostingRegressor(max_iter=120, max_depth=3, learning_rate=0.03, random_state=42)
         self.reg_model.fit(X, y_gap)
 
+        # Compute In-Sample Performance
         pred_cls = self.cls_model.predict(X)
         pred_gap = self.reg_model.predict(X)
         reconstructed_open = clean_df["Nifty_Close"] * (1 + pred_gap / 100)
@@ -186,11 +188,27 @@ class AdaptiveQuantEngine:
         self.last_train_mae = float(mean_absolute_error(actual_open, reconstructed_open))
         self.train_samples = len(clean_df)
 
+        # Check Live Database Performance to Log Realized Model Drift
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
+        cursor.execute("""
+            SELECT p.predicted_open, a.actual_open, p.predicted_direction, a.actual_direction
+            FROM actuals a
+            JOIN predictions p ON a.trade_date = p.target_date
+        """)
+        verified_records = cursor.fetchall()
+
+        live_note = notes
+        if verified_records:
+            live_errors = [abs(r[0] - r[1]) for r in verified_records]
+            live_hits = [1 if r[2] == r[3] else 0 for r in verified_records]
+            avg_live_mae = np.mean(live_errors)
+            live_acc = np.mean(live_hits)
+            live_note += f" | Live Verified: {len(verified_records)} days (MAE: ₹{avg_live_mae:.2f}, Acc: {live_acc*100:.1f}%)"
+
         cursor.execute(
             "INSERT INTO model_logs (training_date, sample_count, mae_score, accuracy_score, enhancement_notes) VALUES (?, ?, ?, ?, ?)",
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), self.train_samples, self.last_train_mae, self.last_train_acc, notes)
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), self.train_samples, self.last_train_mae, self.last_train_acc, live_note)
         )
         conn.commit()
         conn.close()
@@ -292,12 +310,9 @@ class AdaptiveQuantEngine:
 
 quant_engine = AdaptiveQuantEngine()
 
-# Initialize Local Background Scheduler (when hosted on local server / VM)
 if not os.getenv("VERCEL"):
     scheduler = BackgroundScheduler()
-    # Job A: 09:30 AM IST -> Morning Open Verification & Model Retraining
     scheduler.add_job(quant_engine.verify_yesterday_prediction, "cron", hour=9, minute=30, id="daily_verification")
-    # Job B: 11:30 AM IST -> Auto-generate Signal for 12:00 PM Trade Entry
     scheduler.add_job(quant_engine.predict_next_open, "cron", hour=11, minute=30, id="daily_prediction")
     scheduler.start()
 
@@ -373,6 +388,60 @@ def get_dashboard_data():
             "in_sample_acc": quant_engine.last_train_acc
         }
     }
+
+@app.get("/api/history")
+def get_prediction_history():
+    """Returns persistent historical database of all predictions and matched verified actuals."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT 
+            p.target_date,
+            p.baseline_close,
+            p.predicted_open,
+            p.predicted_direction,
+            p.prob_gap_up,
+            p.prob_flat,
+            p.prob_gap_down,
+            a.actual_open,
+            a.actual_direction,
+            a.actual_gap_pct,
+            p.created_at
+        FROM predictions p
+        LEFT JOIN actuals a ON p.target_date = a.trade_date
+        ORDER BY p.id DESC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+
+    history = []
+    for r in rows:
+        pred_open = r[2]
+        act_open = r[7]
+        pred_dir = r[3]
+        act_dir = r[8]
+
+        error_rs = round(abs(pred_open - act_open), 2) if act_open is not None else None
+        hit = (pred_dir == act_dir) if act_dir is not None else None
+
+        history.append({
+            "target_date": r[0],
+            "baseline_close": r[1],
+            "predicted_open": pred_open,
+            "predicted_direction": pred_dir,
+            "prob_up": r[4],
+            "prob_flat": r[5],
+            "prob_down": r[6],
+            "actual_open": act_open,
+            "actual_direction": act_dir,
+            "actual_gap_pct": r[9],
+            "error_rs": error_rs,
+            "hit": hit,
+            "verified": act_open is not None,
+            "created_at": r[10]
+        })
+
+    return {"history": history}
 
 @app.api_route("/api/trigger-prediction", methods=["GET", "POST"])
 def trigger_prediction():
