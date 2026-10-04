@@ -3,7 +3,7 @@ import sqlite3
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -14,6 +14,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score, mean_absolute_error
+
+# Explicit IST Timezone (UTC +5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now() -> datetime:
+    return datetime.now(IST)
 
 # Base Directory & Persistent DB Setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,7 +42,7 @@ def init_db():
         implied_lower REAL,
         implied_upper REAL,
         vix_close REAL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT
     )
     """)
     
@@ -48,7 +54,7 @@ def init_db():
         actual_close REAL,
         actual_gap_pct REAL,
         actual_direction TEXT,
-        verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        verified_at TEXT
     )
     """)
     
@@ -60,7 +66,7 @@ def init_db():
         mae_score REAL,
         accuracy_score REAL,
         enhancement_notes TEXT,
-        logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        logged_at TEXT
     )
     """)
     
@@ -85,12 +91,12 @@ class AdaptiveQuantEngine:
         self.train_samples = 0
 
     def fetch_historical_data(self, years: int = 5) -> pd.DataFrame:
-        end_date = datetime.now()
+        end_date = get_ist_now()
         start_date = end_date - timedelta(days=years * 365)
         
-        nifty = yf.download("^NSEI", start=start_date, end=end_date, progress=False)
-        vix = yf.download("^INDIAVIX", start=start_date, end=end_date, progress=False)
-        spx = yf.download("^GSPC", start=start_date, end=end_date, progress=False)
+        nifty = yf.download("^NSEI", start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), progress=False)
+        vix = yf.download("^INDIAVIX", start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), progress=False)
+        spx = yf.download("^GSPC", start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), progress=False)
 
         for df in [nifty, vix, spx]:
             if isinstance(df.columns, pd.MultiIndex):
@@ -162,7 +168,6 @@ class AdaptiveQuantEngine:
         return data
 
     def train_and_enhance(self, notes: str = "Initial Training"):
-        """Retrains the model using historical data combined with all verified live database records."""
         df_raw = self.fetch_historical_data()
         df_feat = self.engineer_features(df_raw)
         
@@ -178,7 +183,6 @@ class AdaptiveQuantEngine:
         self.reg_model = HistGradientBoostingRegressor(max_iter=120, max_depth=3, learning_rate=0.03, random_state=42)
         self.reg_model.fit(X, y_gap)
 
-        # Compute In-Sample Performance
         pred_cls = self.cls_model.predict(X)
         pred_gap = self.reg_model.predict(X)
         reconstructed_open = clean_df["Nifty_Close"] * (1 + pred_gap / 100)
@@ -188,7 +192,6 @@ class AdaptiveQuantEngine:
         self.last_train_mae = float(mean_absolute_error(actual_open, reconstructed_open))
         self.train_samples = len(clean_df)
 
-        # Check Live Database Performance to Log Realized Model Drift
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("""
@@ -206,15 +209,17 @@ class AdaptiveQuantEngine:
             live_acc = np.mean(live_hits)
             live_note += f" | Live Verified: {len(verified_records)} days (MAE: ₹{avg_live_mae:.2f}, Acc: {live_acc*100:.1f}%)"
 
+        now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
+
         cursor.execute(
-            "INSERT INTO model_logs (training_date, sample_count, mae_score, accuracy_score, enhancement_notes) VALUES (?, ?, ?, ?, ?)",
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), self.train_samples, self.last_train_mae, self.last_train_acc, live_note)
+            "INSERT INTO model_logs (training_date, sample_count, mae_score, accuracy_score, enhancement_notes, logged_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (now_ist, self.train_samples, self.last_train_mae, self.last_train_acc, live_note, now_ist)
         )
         conn.commit()
         conn.close()
 
     def predict_next_open(self) -> dict:
-        """Executes at 11:30 AM IST to generate signal for 12:00 PM trade entry."""
+        """Executes at 11:30 AM IST to generate signal for 12:00 PM IST trade entry."""
         if self.cls_model is None or self.reg_model is None:
             self.train_and_enhance(notes="Initialization Cold Start")
 
@@ -233,7 +238,8 @@ class AdaptiveQuantEngine:
         daily_sigma = (last_vix / np.sqrt(252)) / 100
 
         class_map = {0: "Gap Down", 1: "Flat", 2: "Gap Up"}
-        next_trading_day = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        next_trading_day = (get_ist_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
 
         res = {
             "target_date": next_trading_day,
@@ -245,18 +251,19 @@ class AdaptiveQuantEngine:
             "prob_gap_up": round(float(probs[2]), 4),
             "implied_lower": round(predicted_open * (1 - daily_sigma), 2),
             "implied_upper": round(predicted_open * (1 + daily_sigma), 2),
-            "vix_close": last_vix
+            "vix_close": last_vix,
+            "created_at": now_ist
         }
 
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("""
         INSERT OR REPLACE INTO predictions 
-        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             res["target_date"], res["baseline_close"], res["predicted_open"], res["predicted_direction"],
-            res["prob_gap_down"], res["prob_flat"], res["prob_gap_up"], res["implied_lower"], res["implied_upper"], res["vix_close"]
+            res["prob_gap_down"], res["prob_flat"], res["prob_gap_up"], res["implied_lower"], res["implied_upper"], res["vix_close"], res["created_at"]
         ))
         conn.commit()
         conn.close()
@@ -285,11 +292,12 @@ class AdaptiveQuantEngine:
         actual_gap_pct = ((actual_open - baseline_close) / baseline_close) * 100
 
         actual_dir = "Gap Down" if actual_gap_pct < -0.25 else ("Gap Up" if actual_gap_pct > 0.25 else "Flat")
+        now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
 
         cursor.execute("""
-        INSERT OR REPLACE INTO actuals (trade_date, actual_open, actual_close, actual_gap_pct, actual_direction)
-        VALUES (?, ?, ?, ?, ?)
-        """, (target_date, actual_open, actual_close, round(actual_gap_pct, 4), actual_dir))
+        INSERT OR REPLACE INTO actuals (trade_date, actual_open, actual_close, actual_gap_pct, actual_direction, verified_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, (target_date, actual_open, actual_close, round(actual_gap_pct, 4), actual_dir, now_ist))
         conn.commit()
         conn.close()
 
@@ -305,13 +313,14 @@ class AdaptiveQuantEngine:
             "predicted_direction": pred_dir,
             "actual_direction": actual_dir,
             "abs_error_rs": round(error_rs, 2),
-            "directional_match": hit
+            "directional_match": hit,
+            "verified_at": now_ist
         }
 
 quant_engine = AdaptiveQuantEngine()
 
 if not os.getenv("VERCEL"):
-    scheduler = BackgroundScheduler()
+    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
     scheduler.add_job(quant_engine.verify_yesterday_prediction, "cron", hour=9, minute=30, id="daily_verification")
     scheduler.add_job(quant_engine.predict_next_open, "cron", hour=11, minute=30, id="daily_prediction")
     scheduler.start()
@@ -391,7 +400,6 @@ def get_dashboard_data():
 
 @app.get("/api/history")
 def get_prediction_history():
-    """Returns persistent historical database of all predictions and matched verified actuals."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("""
@@ -446,7 +454,7 @@ def get_prediction_history():
 @app.api_route("/api/trigger-prediction", methods=["GET", "POST"])
 def trigger_prediction():
     res = quant_engine.predict_next_open()
-    return {"message": "11:30 AM Signal generated successfully.", "result": res}
+    return {"message": "11:30 AM IST Signal generated successfully.", "result": res}
 
 @app.api_route("/api/trigger-verification", methods=["GET", "POST"])
 def trigger_verification():
