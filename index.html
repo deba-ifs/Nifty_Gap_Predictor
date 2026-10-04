@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nifty 50 Quant Predictor (IST Timelines)</title>
+  <title>Nifty 50 Quant Predictor & Macro Risk Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
   <script>
@@ -32,7 +32,7 @@
       </div>
       <div>
         <h1 class="text-lg font-bold tracking-wide">NIFTY 50 QUANTITATIVE PREDICTOR</h1>
-        <p class="text-xs text-slate-400">All Schedules & Signals Standardized to Indian Standard Time (IST)</p>
+        <p class="text-xs text-slate-400">Continuous Self-Learning Engine with Macro & Geopolitical Risk Multiplier</p>
       </div>
     </div>
 
@@ -67,16 +67,34 @@
 
     <!-- TAB 1: LIVE FORECAST & SIGNAL -->
     <div id="tabContentForecast" class="space-y-6">
-      <div class="flex flex-wrap items-center justify-between gap-4 bg-cardbg p-4 rounded-xl border border-bordercol">
-        <div class="text-xs text-slate-400">
-          <i class="fa-solid fa-clock text-blue-400 mr-1"></i> Automated Schedule: <strong>09:30 AM IST</strong> (Verify Actuals) | <strong>11:30 AM IST</strong> (12:00 PM IST Trade Signal)
+      
+      <!-- Macro & Geopolitical Risk Radar Card -->
+      <div class="bg-cardbg rounded-xl p-4 border border-bordercol shadow-lg grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+        <div class="md:col-span-1 border-r border-slate-800 pr-4">
+          <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Macro Event Risk Level</span>
+          <p id="macroRiskLevel" class="text-sm font-extrabold text-emerald-400 mt-1">STABLE ENVIRONMENT</p>
+          <span class="text-[11px] text-slate-500">Vol Multiplier: <strong id="macroMultiplier" class="text-slate-300">1.00x</strong></span>
         </div>
-        <div class="flex space-x-3">
-          <button onclick="triggerPrediction()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center">
-            <i class="fa-solid fa-bolt mr-2"></i> Trigger 11:30 AM IST Signal
-          </button>
-          <button onclick="triggerVerification()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center">
-            <i class="fa-solid fa-brain mr-2"></i> Verify Actuals & Enhance Model
+
+        <div class="flex justify-between items-center bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+          <div>
+            <span class="text-[10px] uppercase text-slate-400">Crude Oil (WTI/Brent)</span>
+            <p id="macroCrudeChange" class="text-sm font-bold text-slate-200 mt-0.5">0.00%</p>
+          </div>
+          <i class="fa-solid fa-oil-well text-amber-500 text-lg"></i>
+        </div>
+
+        <div class="flex justify-between items-center bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+          <div>
+            <span class="text-[10px] uppercase text-slate-400">USD / INR Rate</span>
+            <p id="macroUsdinrChange" class="text-sm font-bold text-slate-200 mt-0.5">0.00%</p>
+          </div>
+          <i class="fa-solid fa-dollar-sign text-emerald-500 text-lg"></i>
+        </div>
+
+        <div class="flex space-x-2">
+          <button onclick="triggerPrediction()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center justify-center">
+            <i class="fa-solid fa-bolt mr-1.5"></i> Run 11:30 AM Signal
           </button>
         </div>
       </div>
@@ -100,7 +118,7 @@
                 <p class="text-xs text-slate-500 mt-1">Baseline Close: <span id="predBaselineClose">₹--</span></p>
               </div>
               <div>
-                <p class="text-xs text-slate-400 uppercase">Implied 1-Sigma Channel (Rule of 16)</p>
+                <p class="text-xs text-slate-400 uppercase">Event-Adjusted 1-Sigma Channel</p>
                 <p id="impliedRange" class="text-lg font-bold text-slate-200 mt-2">₹-- — ₹--</p>
                 <p class="text-xs text-slate-500 mt-1">India VIX Close: <span id="vixVal">--</span></p>
               </div>
@@ -283,20 +301,29 @@
 
           <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
             <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">Crude Oil (WTI/Brent)</span>
+              <span class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-mono">CL=F</span>
+            </div>
+            <p class="text-xs text-slate-400">Tracks daily Brent Crude price movement %. Spikes >2.0% trigger an immediate macro risk expansion factor.</p>
+            <div class="text-[11px] text-slate-500">Source: NYMEX Commodity Stream</div>
+          </div>
+
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">USD / INR Rate</span>
+              <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-mono">USDINR=X</span>
+            </div>
+            <p class="text-xs text-slate-400">Measures rupee weakness. Currency depreciation correlates with Foreign Institutional Investor (FII) net equity outflows.</p>
+            <div class="text-[11px] text-slate-500">Source: Global Forex Stream</div>
+          </div>
+
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
               <span class="font-bold text-xs text-slate-200">S&P 500 Index</span>
               <span class="text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded font-mono">^GSPC</span>
             </div>
             <p class="text-xs text-slate-400">Captures US overnight market sentiment % change to gauge inter-market global directional cues.</p>
             <div class="text-[11px] text-slate-500">Source: US Benchmark Feed</div>
-          </div>
-
-          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-200">Put-Call Ratio (PCR)</span>
-              <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-mono">Derivatives Skew</span>
-            </div>
-            <p class="text-xs text-slate-400">Measures institutional option sentiment & 5-day EMA trends to identify dynamic hedging pressure.</p>
-            <div class="text-[11px] text-slate-500">Source: Option Chain Stream</div>
           </div>
 
           <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
@@ -307,15 +334,6 @@
             <p class="text-xs text-slate-400">Tracks offshore GIFT Nifty momentum to capture pre-market price expectations.</p>
             <div class="text-[11px] text-slate-500">Source: Inter-market Futures Stream</div>
           </div>
-
-          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-200">Close Location Value</span>
-              <span class="text-[10px] bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded font-mono">CLV Indicator</span>
-            </div>
-            <p class="text-xs text-slate-400">Calculates close position relative to high-low span: <code>(2C - H - L)/(H - L)</code> to isolate institutional bell buying.</p>
-            <div class="text-[11px] text-slate-500">Source: Quantitative Feature Pipeline</div>
-          </div>
         </div>
       </div>
 
@@ -323,9 +341,9 @@
       <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
         <div class="border-b border-slate-800 pb-3">
           <h3 class="text-base font-bold text-emerald-400 flex items-center">
-            <i class="fa-solid fa-square-root-variable mr-2"></i> 2. Prediction Formulas & Math Transparency
+            <i class="fa-solid fa-square-root-variable mr-2"></i> 2. Prediction Formulas & Event Multiplier
           </h3>
-          <p class="text-xs text-slate-400 mt-1">Mathematical transparency detailing how predicted open prices and 1-sigma bounds are calculated.</p>
+          <p class="text-xs text-slate-400 mt-1">Mathematical transparency detailing how predicted open prices and event-adjusted 1-sigma bounds are calculated.</p>
         </div>
 
         <div class="space-y-4 text-xs">
@@ -333,7 +351,7 @@
             <div class="font-bold text-blue-400 uppercase text-[11px]">Step A: Stationary Target Transformation</div>
             <p class="text-slate-300">To prevent machine learning trees from stalling at historical ceilings, the model forecasts the <strong>stationary gap percentage</strong> ($\hat{g}$):</p>
             <div class="p-3 bg-slate-950 font-mono text-emerald-400 rounded border border-slate-800 text-center">
-              $\hat{g} = \widehat{\Delta \text{Gap}\%}_{t+1} = f\Big(\text{CLV}_t, \text{VIX}_t, \text{GIFT}_t, \text{PCR}_t, \text{RSI}_{14,t}, \text{SPX}_t\Big)$
+              $\hat{g} = \widehat{\Delta \text{Gap}\%}_{t+1} = f\Big(\text{CLV}_t, \text{VIX}_t, \text{GIFT}_t, \text{PCR}_t, \text{RSI}_t, \text{Crude}_t, \text{USDINR}_t\Big)$
             </div>
           </div>
 
@@ -346,10 +364,10 @@
           </div>
 
           <div class="p-4 bg-slate-900/70 rounded-xl border border-slate-800 space-y-2">
-            <div class="font-bold text-blue-400 uppercase text-[11px]">Step C: Implied 1-Sigma Volatility Bounds (Rule of 16)</div>
-            <p class="text-slate-300">Annualized India VIX ($\sigma_{ann}$) is converted to daily standard deviation assuming 252 trading days ($\sqrt{252} \approx 15.937$):</p>
+            <div class="font-bold text-blue-400 uppercase text-[11px]">Step C: Event-Adjusted Implied Volatility Channel ($M_t$)</div>
+            <p class="text-slate-300">The daily implied volatility ($\sigma_{daily}$) is multiplied by the active Macro Event Risk Multiplier ($M_t \in [1.0, 1.5]$):</p>
             <div class="p-3 bg-slate-950 font-mono text-emerald-400 rounded border border-slate-800 text-center">
-              $\sigma_{daily} = \frac{\text{India VIX}_t}{\sqrt{252}} \quad \longrightarrow \quad \text{Upper} = \widehat{\text{Open}} \times (1 + \sigma_{daily}), \quad \text{Lower} = \widehat{\text{Open}} \times (1 - \sigma_{daily})$
+              $\sigma_{adjusted} = \left(\frac{\text{India VIX}_t}{\sqrt{252}}\right) \times M_t \quad \longrightarrow \quad \text{Upper} = \widehat{\text{Open}} \times (1 + \sigma_{adj}), \quad \text{Lower} = \widehat{\text{Open}} \times (1 - \sigma_{adj})$
             </div>
           </div>
         </div>
@@ -450,6 +468,28 @@
           document.getElementById('predBaselineClose').innerText = `₹${p.baseline_close.toLocaleString()}`;
           document.getElementById('impliedRange').innerText = `₹${p.implied_lower.toLocaleString()} — ₹${p.implied_upper.toLocaleString()}`;
           document.getElementById('vixVal').innerText = p.vix_close;
+
+          // Macro Risk Metrics
+          if (p.event_risk_level) {
+            const riskElem = document.getElementById('macroRiskLevel');
+            riskElem.innerText = p.event_risk_level;
+            if (p.event_risk_level.includes('ELEVATED')) {
+              riskElem.className = "text-sm font-extrabold text-amber-400 mt-1 animate-pulse";
+            } else {
+              riskElem.className = "text-sm font-extrabold text-emerald-400 mt-1";
+            }
+            document.getElementById('macroMultiplier').innerText = `${p.event_multiplier}x`;
+            
+            const crudeElem = document.getElementById('macroCrudeChange');
+            const crudeVal = p.crude_change_pct || 0;
+            crudeElem.innerText = `${crudeVal >= 0 ? '+' : ''}${crudeVal.toFixed(2)}%`;
+            crudeElem.className = crudeVal > 1.5 ? "text-sm font-bold text-rose-400 mt-0.5" : "text-sm font-bold text-slate-200 mt-0.5";
+
+            const usdinrElem = document.getElementById('macroUsdinrChange');
+            const usdinrVal = p.usdinr_change_pct || 0;
+            usdinrElem.innerText = `${usdinrVal >= 0 ? '+' : ''}${usdinrVal.toFixed(2)}%`;
+            usdinrElem.className = usdinrVal > 0.3 ? "text-sm font-bold text-amber-400 mt-0.5" : "text-sm font-bold text-slate-200 mt-0.5";
+          }
 
           const badge = document.getElementById('predDirBadge');
           badge.innerText = p.predicted_direction.toUpperCase();

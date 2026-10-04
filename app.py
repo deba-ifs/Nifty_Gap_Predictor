@@ -42,6 +42,10 @@ def init_db():
         implied_lower REAL,
         implied_upper REAL,
         vix_close REAL,
+        crude_change_pct REAL,
+        usdinr_change_pct REAL,
+        event_multiplier REAL,
+        event_risk_level TEXT,
         created_at TEXT
     )
     """)
@@ -79,8 +83,63 @@ FEATURE_COLS = [
     "CLV", "Expected_Daily_Move_Pct", "Vol_Adjusted_GIFT_Ratio",
     "VIX_Pct_Change", "VIX_Regime_Ratio", "VIX_ZScore_20d", "Put_Call_Ratio",
     "PCR_EMA5", "PCR_Change", "SPX_Return_Pct", "GIFT_Nifty_Pct",
-    "Nifty_RSI14", "Nifty_Ret1d", "Nifty_Ret5d", "Nifty_VIX_Interaction", "PCR_CLV_Interaction"
+    "Nifty_RSI14", "Nifty_Ret1d", "Nifty_Ret5d", "Crude_Ret1d", "USDINR_Ret1d",
+    "Nifty_VIX_Interaction", "PCR_CLV_Interaction"
 ]
+
+class MacroEventEngine:
+    """Detects scheduled central bank policy events, geopolitical shocks, and commodity surges."""
+    
+    @staticmethod
+    def evaluate_macro_risk(df_raw: pd.DataFrame) -> dict:
+        now_ist = get_ist_now()
+        day_of_month = now_ist.day
+        month = now_ist.month
+        
+        # Latest market asset returns
+        crude_ret = float(df_raw["Crude_Close"].pct_change().iloc[-1] * 100) if "Crude_Close" in df_raw else 0.0
+        usdinr_ret = float(df_raw["USDINR_Close"].pct_change().iloc[-1] * 100) if "USDINR_Close" in df_raw else 0.0
+        vix_val = float(df_raw["VIX_Close"].iloc[-1])
+        
+        event_multiplier = 1.0
+        risk_flags = []
+        
+        # 1. Scheduled RBI MPC Policy Days (First week of Feb, Apr, Jun, Aug, Oct, Dec)
+        if month in [2, 4, 6, 8, 10, 12] and day_of_month <= 10:
+            event_multiplier *= 1.20
+            risk_flags.append("RBI MPC Policy Decision Window")
+            
+        # 2. US FOMC Rate Decision Window (Mid/Late Month in Mar, May, Jun, Jul, Sep, Nov, Dec)
+        if month in [3, 5, 6, 7, 9, 11, 12] and 14 <= day_of_month <= 22:
+            event_multiplier *= 1.15
+            risk_flags.append("US FOMC Rate Decision Window")
+            
+        # 3. Commodity Shock (Crude Oil Spike > 2.0%)
+        if crude_ret > 2.0:
+            event_multiplier *= 1.25
+            risk_flags.append(f"Geopolitical Crude Oil Shock (+{crude_ret:.2f}%)")
+        elif crude_ret < -2.0:
+            risk_flags.append(f"Crude Oil Deflation Drop ({crude_ret:.2f}%)")
+            
+        # 4. FX Volatility Shock (USD/INR Shift > 0.4%)
+        if abs(usdinr_ret) > 0.4:
+            event_multiplier *= 1.15
+            risk_flags.append(f"USD/INR Currency Shift ({usdinr_ret:+.2f}%)")
+            
+        # 5. Volatility Regime Spike (VIX > 18.0)
+        if vix_val > 18.0:
+            event_multiplier *= 1.30
+            risk_flags.append(f"High Volatility Regime (VIX {vix_val:.2f})")
+            
+        risk_level = "ELEVATED EVENT RISK" if event_multiplier > 1.15 else "STABLE MACRO ENVIRONMENT"
+        
+        return {
+            "event_multiplier": round(event_multiplier, 2),
+            "risk_level": risk_level,
+            "risk_flags": risk_flags if risk_flags else ["Standard Trading Conditions"],
+            "crude_ret_1d": round(crude_ret, 2),
+            "usdinr_ret_1d": round(usdinr_ret, 2)
+        }
 
 class AdaptiveQuantEngine:
     def __init__(self):
@@ -94,11 +153,16 @@ class AdaptiveQuantEngine:
         end_date = get_ist_now()
         start_date = end_date - timedelta(days=years * 365)
         
-        nifty = yf.download("^NSEI", start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), progress=False)
-        vix = yf.download("^INDIAVIX", start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), progress=False)
-        spx = yf.download("^GSPC", start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), progress=False)
+        s_date = start_date.strftime("%Y-%m-%d")
+        e_date = end_date.strftime("%Y-%m-%d")
 
-        for df in [nifty, vix, spx]:
+        nifty = yf.download("^NSEI", start=s_date, end=e_date, progress=False)
+        vix = yf.download("^INDIAVIX", start=s_date, end=e_date, progress=False)
+        spx = yf.download("^GSPC", start=s_date, end=e_date, progress=False)
+        crude = yf.download("CL=F", start=s_date, end=e_date, progress=False)
+        usdinr = yf.download("USDINR=X", start=s_date, end=e_date, progress=False)
+
+        for df in [nifty, vix, spx, crude, usdinr]:
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
@@ -110,6 +174,8 @@ class AdaptiveQuantEngine:
         data["Nifty_Volume"] = nifty["Volume"]
         data["VIX_Close"] = vix["Close"]
         data["SPX_Close"] = spx["Close"].ffill()
+        data["Crude_Close"] = crude["Close"].ffill()
+        data["USDINR_Close"] = usdinr["Close"].ffill()
 
         data.dropna(subset=["Nifty_Close", "Nifty_Open", "VIX_Close"], inplace=True)
 
@@ -143,6 +209,8 @@ class AdaptiveQuantEngine:
         data["PCR_EMA5"] = data["Put_Call_Ratio"].ewm(span=5, adjust=False).mean()
         data["PCR_Change"] = data["Put_Call_Ratio"].diff()
         data["SPX_Return_Pct"] = data["SPX_Close"].pct_change() * 100
+        data["Crude_Ret1d"] = data["Crude_Close"].pct_change() * 100
+        data["USDINR_Ret1d"] = data["USDINR_Close"].pct_change() * 100
 
         delta = data["Nifty_Close"].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
@@ -230,12 +298,18 @@ class AdaptiveQuantEngine:
         last_close = float(df_raw["Nifty_Close"].iloc[-1])
         last_vix = float(df_raw["VIX_Close"].iloc[-1])
 
+        # Evaluate Macro & Geopolitical Risk Multiplier
+        macro_info = MacroEventEngine.evaluate_macro_risk(df_raw)
+
         probs = self.cls_model.predict_proba(latest_row)[0]
         pred_class = int(self.cls_model.predict(latest_row)[0])
         pred_gap_pct = float(self.reg_model.predict(latest_row)[0])
 
         predicted_open = round(last_close * (1 + pred_gap_pct / 100), 2)
-        daily_sigma = (last_vix / np.sqrt(252)) / 100
+        
+        # Apply Macro Volatility Multiplier to Implied Volatility Bounds
+        base_daily_sigma = (last_vix / np.sqrt(252)) / 100
+        event_adjusted_sigma = base_daily_sigma * macro_info["event_multiplier"]
 
         class_map = {0: "Gap Down", 1: "Flat", 2: "Gap Up"}
         next_trading_day = (get_ist_now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -249,9 +323,14 @@ class AdaptiveQuantEngine:
             "prob_gap_down": round(float(probs[0]), 4),
             "prob_flat": round(float(probs[1]), 4),
             "prob_gap_up": round(float(probs[2]), 4),
-            "implied_lower": round(predicted_open * (1 - daily_sigma), 2),
-            "implied_upper": round(predicted_open * (1 + daily_sigma), 2),
+            "implied_lower": round(predicted_open * (1 - event_adjusted_sigma), 2),
+            "implied_upper": round(predicted_open * (1 + event_adjusted_sigma), 2),
             "vix_close": last_vix,
+            "crude_change_pct": macro_info["crude_ret_1d"],
+            "usdinr_change_pct": macro_info["usdinr_ret_1d"],
+            "event_multiplier": macro_info["event_multiplier"],
+            "event_risk_level": macro_info["risk_level"],
+            "event_flags": macro_info["risk_flags"],
             "created_at": now_ist
         }
 
@@ -259,11 +338,12 @@ class AdaptiveQuantEngine:
         cursor = conn.cursor()
         cursor.execute("""
         INSERT OR REPLACE INTO predictions 
-        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_change_pct, usdinr_change_pct, event_multiplier, event_risk_level, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             res["target_date"], res["baseline_close"], res["predicted_open"], res["predicted_direction"],
-            res["prob_gap_down"], res["prob_flat"], res["prob_gap_up"], res["implied_lower"], res["implied_upper"], res["vix_close"], res["created_at"]
+            res["prob_gap_down"], res["prob_flat"], res["prob_gap_up"], res["implied_lower"], res["implied_upper"],
+            res["vix_close"], res["crude_change_pct"], res["usdinr_change_pct"], res["event_multiplier"], res["event_risk_level"], res["created_at"]
         ))
         conn.commit()
         conn.close()
@@ -340,12 +420,12 @@ def get_dashboard_data():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close FROM predictions ORDER BY id DESC LIMIT 1")
+    cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_change_pct, usdinr_change_pct, event_multiplier, event_risk_level FROM predictions ORDER BY id DESC LIMIT 1")
     pred_row = cursor.fetchone()
 
     if not pred_row:
         quant_engine.predict_next_open()
-        cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close FROM predictions ORDER BY id DESC LIMIT 1")
+        cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_change_pct, usdinr_change_pct, event_multiplier, event_risk_level FROM predictions ORDER BY id DESC LIMIT 1")
         pred_row = cursor.fetchone()
 
     cursor.execute("""
@@ -373,6 +453,10 @@ def get_dashboard_data():
             "implied_lower": pred_row[7],
             "implied_upper": pred_row[8],
             "vix_close": pred_row[9],
+            "crude_change_pct": pred_row[10],
+            "usdinr_change_pct": pred_row[11],
+            "event_multiplier": pred_row[12],
+            "event_risk_level": pred_row[13]
         }
 
     ver_data = {}
