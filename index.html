@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nifty 50 Quant Predictor & Transparency Dashboard</title>
+  <title>Nifty 50 Quant Predictor & Execution Benchmark</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
   <script>
@@ -32,7 +32,7 @@
       </div>
       <div>
         <h1 class="text-lg font-bold tracking-wide">NIFTY 50 QUANTITATIVE PREDICTOR</h1>
-        <p class="text-xs text-slate-400">09:20 AM IST Open Verification & 11:30 AM IST Trade Signal</p>
+        <p class="text-xs text-slate-400">Locked 11:30 AM IST Execution Benchmark & Live Session Drift</p>
       </div>
     </div>
 
@@ -100,32 +100,57 @@
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Forecast Card -->
-        <div class="lg:col-span-2 bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl flex flex-col justify-between">
+        <!-- Main Forecast Card -->
+        <div class="lg:col-span-2 bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl flex flex-col justify-between space-y-6">
           <div>
-            <div class="flex justify-between items-start mb-6">
+            <div class="flex justify-between items-start mb-4">
               <div>
-                <span class="text-xs uppercase tracking-wider font-semibold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded">Next Trading Session Target</span>
+                <span class="text-xs uppercase tracking-wider font-semibold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded">Target Opening Session</span>
                 <h2 id="predTargetDate" class="text-2xl font-black mt-2">--</h2>
               </div>
               <div id="predDirBadge" class="px-4 py-1.5 rounded-full text-sm font-bold border">--</div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 my-6 bg-slate-900/50 p-5 rounded-xl border border-slate-800">
+            <!-- Official 11:30 AM Trade Benchmark Highlight Card -->
+            <div class="p-4 bg-gradient-to-r from-blue-950/60 via-slate-900 to-slate-900 border border-blue-500/40 rounded-xl space-y-3 mb-6 shadow-inner">
+              <div class="flex justify-between items-center border-b border-blue-800/40 pb-2">
+                <span class="text-xs font-bold text-blue-300 uppercase tracking-wide flex items-center">
+                  <i class="fa-solid fa-lock text-amber-400 mr-2"></i> Official 11:30 AM IST Trade Execution Benchmark (Locked for 12:00 PM Trade Entry)
+                </span>
+                <span class="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded font-mono">11:30 AM Snapshot</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs pt-1">
+                <div>
+                  <span class="text-slate-400 block text-[11px]">11:30 AM Baseline Spot:</span>
+                  <span id="init1130Baseline" class="text-base font-extrabold text-slate-100">₹--</span>
+                </div>
+                <div>
+                  <span class="text-slate-400 block text-[11px]">11:30 AM Forecast Open:</span>
+                  <span id="init1130PredOpen" class="text-base font-extrabold text-blue-400">₹--</span>
+                </div>
+                <div>
+                  <span class="text-slate-400 block text-[11px]">11:30 AM Official Direction:</span>
+                  <span id="init1130Direction" class="text-sm font-bold text-emerald-400">--</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Live Session Re-Scan / Drift View -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 my-4 bg-slate-900/50 p-5 rounded-xl border border-slate-800">
               <div>
-                <p class="text-xs text-slate-400 uppercase">Predicted Opening Price</p>
-                <p id="predOpenPrice" class="text-4xl font-extrabold text-blue-400 mt-1">₹--</p>
-                <p class="text-xs text-slate-500 mt-1">Baseline Close: <span id="predBaselineClose">₹--</span></p>
+                <p class="text-xs text-slate-400 uppercase">Live Drift / Latest Session Open Forecast</p>
+                <p id="predOpenPrice" class="text-3xl font-extrabold text-slate-200 mt-1">₹--</p>
+                <p class="text-xs text-slate-500 mt-1">Current Spot Baseline: <span id="predBaselineClose" class="font-semibold text-slate-300">₹--</span></p>
               </div>
               <div>
                 <p class="text-xs text-slate-400 uppercase">Event-Adjusted 1-Sigma Channel</p>
-                <p id="impliedRange" class="text-lg font-bold text-slate-200 mt-2">₹-- — ₹--</p>
+                <p id="impliedRange" class="text-base font-bold text-slate-200 mt-1">₹-- — ₹--</p>
                 <p class="text-xs text-slate-500 mt-1">India VIX Close: <span id="vixVal">--</span></p>
               </div>
             </div>
 
             <div class="space-y-3">
-              <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Directional Probability Distribution</p>
+              <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Directional Probability Distribution (11:30 AM Official Signal)</p>
               <div>
                 <div class="flex justify-between text-xs mb-1">
                   <span class="text-emerald-400 font-semibold">Gap Up (> +0.25%)</span>
@@ -158,9 +183,9 @@
             </div>
           </div>
 
-          <div class="text-xs text-slate-500 mt-6 pt-4 border-t border-slate-800 flex justify-between">
+          <div class="text-xs text-slate-500 pt-4 border-t border-slate-800 flex justify-between">
             <span>Engine Model: Calibrated Gradient Boosting</span>
-            <span>All Timelines in IST (UTC+05:30)</span>
+            <span>All Timelines Standardized in IST</span>
           </div>
         </div>
 
@@ -173,7 +198,7 @@
             <div class="mt-6 space-y-4">
               <div id="verHitCard" class="p-4 rounded-xl border flex items-center justify-between">
                 <div>
-                  <p class="text-xs text-slate-400">Direction Match</p>
+                  <p class="text-xs text-slate-400">Direction Match (vs 11:30 AM Signal)</p>
                   <p id="verHitStatus" class="text-sm font-bold mt-0.5">--</p>
                 </div>
                 <div id="verHitIcon" class="text-2xl">
@@ -183,15 +208,15 @@
 
               <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
                 <div class="flex justify-between">
-                  <span class="text-slate-400">Predicted Open:</span>
-                  <span id="verPredOpen" class="font-bold">₹--</span>
+                  <span class="text-slate-400">11:30 AM Official Forecast:</span>
+                  <span id="verPredOpen" class="font-bold text-blue-400">₹--</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-slate-400">Realized Actual Open:</span>
                   <span id="verActualOpen" class="font-bold text-emerald-400">₹--</span>
                 </div>
                 <div class="flex justify-between border-t border-slate-800 pt-2">
-                  <span class="text-slate-400">Absolute Error:</span>
+                  <span class="text-slate-400">Absolute Error vs Signal:</span>
                   <span id="verError" class="font-bold text-amber-400">₹--</span>
                 </div>
               </div>
@@ -199,7 +224,7 @@
           </div>
 
           <div class="mt-6 p-3 bg-blue-900/20 border border-blue-800/40 rounded-lg text-xs text-blue-300">
-            <i class="fa-solid fa-circle-info mr-1"></i> Opening actuals ingested at 09:20 AM IST automatically retrain model parameters.
+            <i class="fa-solid fa-circle-info mr-1"></i> Verified against actual open at 09:20 AM IST to continuously train model parameters.
           </div>
         </div>
       </div>
@@ -213,7 +238,7 @@
             <h3 class="text-base font-bold flex items-center">
               <i class="fa-solid fa-database text-blue-400 mr-2"></i> Predictions vs. Actuals Persistent Log
             </h3>
-            <p class="text-xs text-slate-400 mt-1">Audit trail of all past predictions stored in SQLite database with exact IST timestamps.</p>
+            <p class="text-xs text-slate-400 mt-1">Audit log comparing locked 11:30 AM IST trade execution benchmarks against realized opening prices.</p>
           </div>
           <button onclick="fetchHistoryData()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded border border-slate-700 transition">
             <i class="fa-solid fa-rotate mr-1"></i> Refresh History
@@ -225,14 +250,14 @@
             <thead class="bg-slate-900 text-slate-400 uppercase border-b border-slate-800">
               <tr>
                 <th class="p-3">Target Date</th>
-                <th class="p-3">Baseline Close</th>
-                <th class="p-3">Predicted Open</th>
+                <th class="p-3">11:30 AM Trade Baseline</th>
+                <th class="p-3 text-blue-400">11:30 AM Official Forecast Open</th>
                 <th class="p-3">Actual Open</th>
-                <th class="p-3">Predicted Dir</th>
-                <th class="p-3">Actual Dir</th>
-                <th class="p-3">Abs Error (₹)</th>
-                <th class="p-3">Created At (IST)</th>
-                <th class="p-3">Status</th>
+                <th class="p-3">Official Signal</th>
+                <th class="p-3">Actual Direction</th>
+                <th class="p-3">Error vs 11:30 AM Signal (₹)</th>
+                <th class="p-3">Logged At (IST)</th>
+                <th class="p-3">Verification Status</th>
               </tr>
             </thead>
             <tbody id="historyTableBody" class="divide-y divide-slate-800">
@@ -305,17 +330,6 @@
             <p class="text-slate-300">Trades are strictly closed at <strong>09:20 AM IST</strong> at market open. All events scheduled <em>after</em> 09:20 AM IST (e.g. 10:00 AM policy speeches) carry <strong>zero risk</strong> and are ignored by the model.</p>
           </div>
         </div>
-
-        <div class="p-4 bg-slate-950/80 rounded-xl border border-slate-800/80 text-xs space-y-2">
-          <div class="font-bold text-slate-200 uppercase text-[11px] flex items-center">
-            <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-2"></i> Primary Overnight Threat Vectors Evaluated
-          </div>
-          <ul class="list-disc list-inside space-y-1 text-slate-400 pl-1">
-            <li><strong class="text-slate-200">US Inflation & FOMC Rate Decision Releases (18:30 – 23:30 IST):</strong> Scheduled overnight US macro releases directly shift US futures and S&P 500 closing returns.</li>
-            <li><strong class="text-slate-200">Overnight Brent Crude Oil Spikes (`BZ=F` > +2.0%):</strong> NYMEX/ICE energy market moves occurring while Indian markets are closed impact morning opening sentiment.</li>
-            <li><strong class="text-slate-200">Offshore GIFT Nifty Arbitrage (06:30 – 09:15 AM IST):</strong> Pre-market GIFT Nifty prices incorporate global overnight news prior to the local opening bell.</li>
-          </ul>
-        </div>
       </div>
 
       <!-- Live Input Values Cards -->
@@ -364,141 +378,6 @@
             <div id="transpMultiplierVal" class="text-lg font-black text-cyan-400">1.00x</div>
             <div id="transpRiskLevelVal" class="text-xs font-bold text-emerald-400">STABLE OVERNIGHT ENVIRONMENT</div>
             <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-800/80">Dynamic expansion factor for 1-sigma bounds.</p>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Section 1 -->
-      <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
-        <div class="border-b border-slate-800 pb-3">
-          <h3 class="text-base font-bold text-blue-400 flex items-center">
-            <i class="fa-solid fa-server mr-2"></i> 1. Ingested Data Sources & Market Feeds
-          </h3>
-          <p class="text-xs text-slate-400 mt-1">Multi-asset market indicators ingested daily to capture domestic technicals, volatility, and global overnight cues.</p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-200">Nifty 50 Index</span>
-              <span class="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-mono">^NSEI</span>
-            </div>
-            <p class="text-xs text-slate-400">Captures daily OHLCV, 14-day RSI, 1-day/5-day momentum, and Close Location Value (CLV).</p>
-            <div class="text-[11px] text-slate-500">Source: Yahoo Finance API</div>
-          </div>
-
-          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-200">India VIX Index</span>
-              <span class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-mono">^INDIAVIX</span>
-            </div>
-            <p class="text-xs text-slate-400">Provides annualized implied volatility. Used to derive Expected Daily Move % via Rule of 16.</p>
-            <div class="text-[11px] text-slate-500">Source: NSE Volatility Index Feed</div>
-          </div>
-
-          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-200">Brent Crude Oil</span>
-              <span class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-mono">BZ=F</span>
-            </div>
-            <p class="text-xs text-slate-400">Tracks daily Brent Crude price movement $. Spikes >2.0% trigger an immediate macro risk expansion factor.</p>
-            <div class="text-[11px] text-slate-500">Source: ICE / NYMEX Commodity Stream</div>
-          </div>
-
-          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-200">USD / INR Rate</span>
-              <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-mono">USDINR=X</span>
-            </div>
-            <p class="text-xs text-slate-400">Measures rupee weakness. Currency depreciation correlates with Foreign Institutional Investor (FII) net equity outflows.</p>
-            <div class="text-[11px] text-slate-500">Source: Global Forex Stream</div>
-          </div>
-
-          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-200">S&P 500 Index</span>
-              <span class="text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded font-mono">^GSPC</span>
-            </div>
-            <p class="text-xs text-slate-400">Captures US overnight market sentiment % change to gauge inter-market global directional cues.</p>
-            <div class="text-[11px] text-slate-500">Source: US Benchmark Feed</div>
-          </div>
-
-          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-200">GIFT Nifty Overnight %</span>
-              <span class="text-[10px] bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded font-mono">NSE IX Cue</span>
-            </div>
-            <p class="text-xs text-slate-400">Tracks offshore GIFT Nifty momentum to capture pre-market price expectations.</p>
-            <div class="text-[11px] text-slate-500">Source: Inter-market Futures Stream</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Section 2 -->
-      <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
-        <div class="border-b border-slate-800 pb-3">
-          <h3 class="text-base font-bold text-emerald-400 flex items-center">
-            <i class="fa-solid fa-square-root-variable mr-2"></i> 2. Prediction Formulas & Event Multiplier
-          </h3>
-          <p class="text-xs text-slate-400 mt-1">Mathematical transparency detailing how predicted open prices and event-adjusted 1-sigma bounds are calculated.</p>
-        </div>
-
-        <div class="space-y-4 text-xs">
-          <div class="p-4 bg-slate-900/70 rounded-xl border border-slate-800 space-y-2">
-            <div class="font-bold text-blue-400 uppercase text-[11px]">Step A: Stationary Target Transformation</div>
-            <p class="text-slate-300">To prevent machine learning trees from stalling at historical ceilings, the model forecasts the <strong>stationary gap percentage</strong> ($\hat{g}$):</p>
-            <div class="p-3 bg-slate-950 font-mono text-emerald-400 rounded border border-slate-800 text-center">
-              $\hat{g} = \widehat{\Delta \text{Gap}\%}_{t+1} = f\Big(\text{CLV}_t, \text{VIX}_t, \text{GIFT}_t, \text{PCR}_t, \text{RSI}_t, \text{Crude}_t, \text{USDINR}_t\Big)$
-            </div>
-          </div>
-
-          <div class="p-4 bg-slate-900/70 rounded-xl border border-slate-800 space-y-2">
-            <div class="font-bold text-blue-400 uppercase text-[11px]">Step B: Reconstructing Predicted Opening Price</div>
-            <p class="text-slate-300">The forecast opening price ($\widehat{\text{Open}}_{t+1}$) is calculated from baseline close ($C_t$) and predicted gap return ($\hat{g}$):</p>
-            <div class="p-3 bg-slate-950 font-mono text-emerald-400 rounded border border-slate-800 text-center">
-              $\widehat{\text{Open}}_{t+1} = C_t \times \left(1 + \frac{\hat{g}}{100}\right)$
-            </div>
-          </div>
-
-          <div class="p-4 bg-slate-900/70 rounded-xl border border-slate-800 space-y-2">
-            <div class="font-bold text-blue-400 uppercase text-[11px]">Step C: Event-Adjusted Implied Volatility Channel ($M_t$)</div>
-            <p class="text-slate-300">The daily implied volatility ($\sigma_{daily}$) is multiplied by the active Macro Event Risk Multiplier ($M_t \in [1.0, 1.5]$):</p>
-            <div class="p-3 bg-slate-950 font-mono text-emerald-400 rounded border border-slate-800 text-center">
-              $\sigma_{adjusted} = \left(\frac{\text{India VIX}_t}{\sqrt{252}}\right) \times M_t \quad \longrightarrow \quad \text{Upper} = \widehat{\text{Open}} \times (1 + \sigma_{adj}), \quad \text{Lower} = \widehat{\text{Open}} \times (1 - \sigma_{adj})$
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Section 3 -->
-      <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
-        <div class="border-b border-slate-800 pb-3">
-          <h3 class="text-base font-bold text-purple-400 flex items-center">
-            <i class="fa-solid fa-timeline mr-2"></i> 3. IST Standardized Timeline & Execution Strategy
-          </h3>
-          <p class="text-xs text-slate-400 mt-1">All daily cron schedules and user signals strictly operate on Indian Standard Time (IST).</p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex items-center text-emerald-400 font-bold">
-              <i class="fa-solid fa-circle-check mr-2"></i> 09:20 AM IST: Morning Verification
-            </div>
-            <p class="text-slate-400">Ingests realized opening price ($O_{actual}$), verifies yesterday's gap prediction, records absolute error, and appends the ground-truth record to SQLite database.</p>
-          </div>
-
-          <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex items-center text-blue-400 font-bold">
-              <i class="fa-solid fa-rotate-right mr-2"></i> Daily Auto-Retraining Loop
-            </div>
-            <p class="text-slate-400">Refits the Calibrated HistGradientBoosting models using the updated historical dataset and live realized errors, continuously tuning feature weights.</p>
-          </div>
-
-          <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
-            <div class="flex items-center text-purple-400 font-bold">
-              <i class="fa-solid fa-bolt mr-2"></i> 11:30 AM IST: Trade Signal Output
-            </div>
-            <p class="text-slate-400">Runs feature engineering on latest mid-session indicators to output tomorrow's forecast prior to your <strong>12:00 PM IST execution window</strong>.</p>
           </div>
         </div>
       </div>
@@ -562,6 +441,13 @@
         if (data.latest_prediction && data.latest_prediction.target_date) {
           const p = data.latest_prediction;
           document.getElementById('predTargetDate').innerText = p.target_date;
+          
+          // Display locked 11:30 AM official trade execution benchmark
+          document.getElementById('init1130Baseline').innerText = `₹${p.initial_1130_baseline.toLocaleString()}`;
+          document.getElementById('init1130PredOpen').innerText = `₹${p.initial_1130_predicted_open.toLocaleString()}`;
+          document.getElementById('init1130Direction').innerText = p.initial_1130_direction.toUpperCase();
+
+          // Display live session re-scan / drift
           document.getElementById('predOpenPrice').innerText = `₹${p.predicted_open.toLocaleString()}`;
           document.getElementById('predBaselineClose').innerText = `₹${p.baseline_close.toLocaleString()}`;
           document.getElementById('impliedRange').innerText = `₹${p.implied_lower.toLocaleString()} — ₹${p.implied_upper.toLocaleString()}`;
@@ -598,23 +484,28 @@
           }
 
           const badge = document.getElementById('predDirBadge');
-          badge.innerText = p.predicted_direction.toUpperCase();
-          if (p.predicted_direction === 'Gap Up') {
+          const targetDir = p.initial_1130_direction || p.predicted_direction;
+          badge.innerText = targetDir.toUpperCase();
+          if (targetDir === 'Gap Up') {
             badge.className = "px-4 py-1.5 rounded-full text-sm font-bold bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
-          } else if (p.predicted_direction === 'Gap Down') {
+          } else if (targetDir === 'Gap Down') {
             badge.className = "px-4 py-1.5 rounded-full text-sm font-bold bg-rose-500/10 text-rose-400 border-rose-500/30";
           } else {
             badge.className = "px-4 py-1.5 rounded-full text-sm font-bold bg-slate-500/10 text-slate-300 border-slate-500/30";
           }
 
-          document.getElementById('probUpText').innerText = `${(p.prob_gap_up * 100).toFixed(1)}%`;
-          document.getElementById('probUpBar').style.width = `${p.prob_gap_up * 100}%`;
+          const pUp = p.initial_prob_up !== undefined ? p.initial_prob_up : p.prob_gap_up;
+          const pFlat = p.initial_prob_flat !== undefined ? p.initial_prob_flat : p.prob_flat;
+          const pDown = p.initial_prob_down !== undefined ? p.initial_prob_down : p.prob_gap_down;
 
-          document.getElementById('probFlatText').innerText = `${(p.prob_flat * 100).toFixed(1)}%`;
-          document.getElementById('probFlatBar').style.width = `${p.prob_flat * 100}%`;
+          document.getElementById('probUpText').innerText = `${(pUp * 100).toFixed(1)}%`;
+          document.getElementById('probUpBar').style.width = `${pUp * 100}%`;
 
-          document.getElementById('probDownText').innerText = `${(p.prob_gap_down * 100).toFixed(1)}%`;
-          document.getElementById('probDownBar').style.width = `${p.prob_gap_down * 100}%`;
+          document.getElementById('probFlatText').innerText = `${(pFlat * 100).toFixed(1)}%`;
+          document.getElementById('probFlatBar').style.width = `${pFlat * 100}%`;
+
+          document.getElementById('probDownText').innerText = `${(pDown * 100).toFixed(1)}%`;
+          document.getElementById('probDownBar').style.width = `${pDown * 100}%`;
         }
 
         if (data.latest_verification && data.latest_verification.trade_date) {
@@ -686,15 +577,18 @@
             }
           }
 
+          const initBase = item.initial_1130_baseline ? `₹${item.initial_1130_baseline.toLocaleString()}` : '--';
+          const initPred = item.initial_1130_predicted_open ? `₹${item.initial_1130_predicted_open.toLocaleString()}` : '--';
+
           tbody.innerHTML += `
             <tr class="hover:bg-slate-800/50">
               <td class="p-3 font-bold text-slate-200">${item.target_date}</td>
-              <td class="p-3">₹${item.baseline_close.toLocaleString()}</td>
-              <td class="p-3 text-blue-400 font-semibold">₹${item.predicted_open.toLocaleString()}</td>
-              <td class="p-3 font-semibold">${item.actual_open ? '₹' + item.actual_open.toLocaleString() : '--'}</td>
-              <td class="p-3">${item.predicted_direction}</td>
+              <td class="p-3 text-slate-300 font-semibold">${initBase}</td>
+              <td class="p-3 text-blue-400 font-bold">${initPred}</td>
+              <td class="p-3 font-semibold text-emerald-400">${item.actual_open ? '₹' + item.actual_open.toLocaleString() : '--'}</td>
+              <td class="p-3 font-semibold">${item.initial_1130_direction || item.predicted_direction}</td>
               <td class="p-3">${item.actual_direction || '--'}</td>
-              <td class="p-3 text-amber-400">${item.error_rs ? '₹' + item.error_rs : '--'}</td>
+              <td class="p-3 text-amber-400 font-bold">${item.error_rs ? '₹' + item.error_rs : '--'}</td>
               <td class="p-3 font-mono text-slate-400">${item.created_at || '--'}</td>
               <td class="p-3">${statusBadge}</td>
             </tr>

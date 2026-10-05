@@ -40,6 +40,12 @@ def init_db():
     CREATE TABLE IF NOT EXISTS predictions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         target_date TEXT UNIQUE,
+        initial_1130_baseline REAL,
+        initial_1130_predicted_open REAL,
+        initial_1130_direction TEXT,
+        initial_prob_down REAL,
+        initial_prob_flat REAL,
+        initial_prob_up REAL,
         baseline_close REAL,
         predicted_open REAL,
         predicted_direction TEXT,
@@ -59,6 +65,26 @@ def init_db():
     )
     """)
     
+    # DB Schema Auto-Migration for existing databases
+    cursor.execute("PRAGMA table_info(predictions)")
+    columns = [col[1] for col in cursor.fetchall()]
+    migration_cols = [
+        ("initial_1130_baseline", "REAL"),
+        ("initial_1130_predicted_open", "REAL"),
+        ("initial_1130_direction", "TEXT"),
+        ("initial_prob_down", "REAL"),
+        ("initial_prob_flat", "REAL"),
+        ("initial_prob_up", "REAL"),
+        ("crude_price", "REAL"),
+        ("usdinr_price", "REAL")
+    ]
+    for col_name, col_type in migration_cols:
+        if col_name not in columns:
+            try:
+                cursor.execute(f"ALTER TABLE predictions ADD COLUMN {col_name} {col_type}")
+            except Exception:
+                pass
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS actuals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,7 +125,6 @@ FEATURE_COLS = [
 class MacroEventEngine:
     @staticmethod
     def evaluate_macro_risk(df_raw: pd.DataFrame) -> dict:
-        """Evaluates overnight risk triggers impacting the 12:00 PM T -> 09:20 AM T+1 holding window."""
         now_ist = get_ist_now()
         day_of_month = now_ist.day
         month = now_ist.month
@@ -115,29 +140,24 @@ class MacroEventEngine:
         event_multiplier = 1.0
         risk_flags = []
         
-        # 1. US FOMC Rate Decision / US CPI Window (Overnight Impact: 18:30 - 23:30 IST)
         if month in [3, 5, 6, 7, 9, 11, 12] and 14 <= day_of_month <= 22:
             event_multiplier *= 1.15
             risk_flags.append("US FOMC / Overnight Inflation Window")
             
-        # 2. RBI Policy Positioning Window (Pre-policy overnight sentiment build)
         if month in [2, 4, 6, 8, 10, 12] and day_of_month <= 10:
             event_multiplier *= 1.15
             risk_flags.append("RBI MPC Pre-Policy Overnight Positioning")
 
-        # 3. Overnight Geopolitical Commodity Shock (Brent Crude Surge > 2.0%)
         if crude_ret > 2.0:
             event_multiplier *= 1.25
             risk_flags.append(f"Overnight Brent Crude Shock (+{crude_ret:.2f}%)")
         elif crude_ret < -2.0:
             risk_flags.append(f"Overnight Crude Price Drop ({crude_ret:.2f}%)")
             
-        # 4. Overnight FX Shift (USD/INR Shift > 0.4%)
         if abs(usdinr_ret) > 0.4:
             event_multiplier *= 1.15
             risk_flags.append(f"Overnight Currency Shift ({usdinr_ret:+.2f}%)")
             
-        # 5. Volatility Regime
         if vix_val > 18.0:
             event_multiplier *= 1.25
             risk_flags.append(f"High Volatility Regime (VIX {vix_val:.2f})")
@@ -276,7 +296,7 @@ class AdaptiveQuantEngine:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT p.predicted_open, a.actual_open, p.predicted_direction, a.actual_direction
+            SELECT p.initial_1130_predicted_open, a.actual_open, p.initial_1130_direction, a.actual_direction
             FROM actuals a
             JOIN predictions p ON a.trade_date = p.target_date
         """)
@@ -284,11 +304,12 @@ class AdaptiveQuantEngine:
 
         live_note = notes
         if verified_records:
-            live_errors = [abs(r[0] - r[1]) for r in verified_records]
-            live_hits = [1 if r[2] == r[3] else 0 for r in verified_records]
-            avg_live_mae = np.mean(live_errors)
-            live_acc = np.mean(live_hits)
-            live_note += f" | Live Verified: {len(verified_records)} days (MAE: ₹{avg_live_mae:.2f}, Acc: {live_acc*100:.1f}%)"
+            live_errors = [abs(r[0] - r[1]) for r in verified_records if r[0] is not None and r[1] is not None]
+            live_hits = [1 if r[2] == r[3] else 0 for r in verified_records if r[2] is not None and r[3] is not None]
+            if live_errors:
+                avg_live_mae = np.mean(live_errors)
+                live_acc = np.mean(live_hits)
+                live_note += f" | Live Verified vs 11:30 AM Signal: {len(live_errors)} days (MAE: ₹{avg_live_mae:.2f}, Acc: {live_acc*100:.1f}%)"
 
         now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
 
@@ -341,10 +362,12 @@ class AdaptiveQuantEngine:
         cursor = conn.cursor()
         cursor.execute("""
         INSERT OR REPLACE INTO predictions 
-        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_price, crude_change_pct, usdinr_price, usdinr_change_pct, event_multiplier, event_risk_level, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (target_date, initial_1130_baseline, initial_1130_predicted_open, initial_1130_direction, initial_prob_down, initial_prob_flat, initial_prob_up, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_price, crude_change_pct, usdinr_price, usdinr_change_pct, event_multiplier, event_risk_level, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             target_date_str, last_close, predicted_open, class_map[pred_class],
+            round(float(probs[0]), 4), round(float(probs[1]), 4), round(float(probs[2]), 4),
+            last_close, predicted_open, class_map[pred_class],
             round(float(probs[0]), 4), round(float(probs[1]), 4), round(float(probs[2]), 4),
             round(predicted_open * (1 - event_adjusted_sigma), 2), round(predicted_open * (1 + event_adjusted_sigma), 2),
             last_vix, macro_info["crude_price"], macro_info["crude_ret_1d"], macro_info["usdinr_price"], macro_info["usdinr_ret_1d"],
@@ -376,7 +399,7 @@ class AdaptiveQuantEngine:
 
                 self.verify_yesterday_prediction()
 
-        # STEP 2: 11:30 AM IST Prediction Refresh Catch-Up
+        # STEP 2: 11:30 AM IST Prediction Catch-Up
         if is_weekday and curr_time_minutes >= (11 * 60 + 30):
             next_trade_date = get_next_trading_day(now_ist)
             today_1130_threshold = f"{today_str} 11:30:00 IST"
@@ -414,8 +437,38 @@ class AdaptiveQuantEngine:
         next_trading_day = get_next_trading_day(get_ist_now())
         now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
 
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # Check if 11:30 AM official snapshot already exists for this target date
+        cursor.execute("SELECT initial_1130_baseline, initial_1130_predicted_open, initial_1130_direction, initial_prob_down, initial_prob_flat, initial_prob_up FROM predictions WHERE target_date = ?", (next_trading_day,))
+        existing_row = cursor.fetchone()
+
+        if existing_row and existing_row[0] is not None:
+            # Preserve locked 11:30 AM Official Trade Execution Benchmark!
+            init_base = existing_row[0]
+            init_pred = existing_row[1]
+            init_dir = existing_row[2]
+            init_p_down = existing_row[3]
+            init_p_flat = existing_row[4]
+            init_p_up = existing_row[5]
+        else:
+            # First execution at 11:30 AM -> Lock initial trade benchmark
+            init_base = last_close
+            init_pred = predicted_open
+            init_dir = class_map[pred_class]
+            init_p_down = round(float(probs[0]), 4)
+            init_p_flat = round(float(probs[1]), 4)
+            init_p_up = round(float(probs[2]), 4)
+
         res = {
             "target_date": next_trading_day,
+            "initial_1130_baseline": init_base,
+            "initial_1130_predicted_open": init_pred,
+            "initial_1130_direction": init_dir,
+            "initial_prob_down": init_p_down,
+            "initial_prob_flat": init_p_flat,
+            "initial_prob_up": init_p_up,
             "baseline_close": last_close,
             "predicted_open": predicted_open,
             "predicted_direction": class_map[pred_class],
@@ -435,14 +488,14 @@ class AdaptiveQuantEngine:
             "created_at": now_ist
         }
 
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
         cursor.execute("""
         INSERT OR REPLACE INTO predictions 
-        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_price, crude_change_pct, usdinr_price, usdinr_change_pct, event_multiplier, event_risk_level, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (target_date, initial_1130_baseline, initial_1130_predicted_open, initial_1130_direction, initial_prob_down, initial_prob_flat, initial_prob_up, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_price, crude_change_pct, usdinr_price, usdinr_change_pct, event_multiplier, event_risk_level, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            res["target_date"], res["baseline_close"], res["predicted_open"], res["predicted_direction"],
+            res["target_date"], res["initial_1130_baseline"], res["initial_1130_predicted_open"], res["initial_1130_direction"],
+            res["initial_prob_down"], res["initial_prob_flat"], res["initial_prob_up"],
+            res["baseline_close"], res["predicted_open"], res["predicted_direction"],
             res["prob_gap_down"], res["prob_flat"], res["prob_gap_up"], res["implied_lower"], res["implied_upper"],
             res["vix_close"], res["crude_price"], res["crude_change_pct"], res["usdinr_price"], res["usdinr_change_pct"],
             res["event_multiplier"], res["event_risk_level"], res["created_at"]
@@ -458,9 +511,13 @@ class AdaptiveQuantEngine:
         
         today_date_str = get_ist_now().strftime("%Y-%m-%d")
         
-        cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions WHERE target_date = ? LIMIT 1", (today_date_str,))
+        cursor.execute("SELECT target_date, initial_1130_baseline, initial_1130_predicted_open, initial_1130_direction FROM predictions WHERE target_date = ? LIMIT 1", (today_date_str,))
         row = cursor.fetchone()
         
+        if not row or row[1] is None:
+            cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions WHERE target_date = ? LIMIT 1", (today_date_str,))
+            row = cursor.fetchone()
+
         if not row:
             cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions ORDER BY id DESC LIMIT 1")
             row = cursor.fetchone()
@@ -530,14 +587,23 @@ def get_dashboard_data():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_price, crude_change_pct, usdinr_price, usdinr_change_pct, event_multiplier, event_risk_level FROM predictions ORDER BY id DESC LIMIT 1")
+    cursor.execute("""
+        SELECT target_date, initial_1130_baseline, initial_1130_predicted_open, initial_1130_direction,
+               initial_prob_down, initial_prob_flat, initial_prob_up,
+               baseline_close, predicted_open, predicted_direction,
+               prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper,
+               vix_close, crude_price, crude_change_pct, usdinr_price, usdinr_change_pct,
+               event_multiplier, event_risk_level, created_at
+        FROM predictions ORDER BY id DESC LIMIT 1
+    """)
     pred_row = cursor.fetchone()
 
     cursor.execute("""
-    SELECT p.target_date, p.predicted_open, a.actual_open, p.predicted_direction, a.actual_direction, a.actual_gap_pct
-    FROM actuals a
-    JOIN predictions p ON a.trade_date = p.target_date
-    ORDER BY a.id DESC LIMIT 1
+        SELECT p.target_date, COALESCE(p.initial_1130_predicted_open, p.predicted_open), a.actual_open,
+               COALESCE(p.initial_1130_direction, p.predicted_direction), a.actual_direction, a.actual_gap_pct
+        FROM actuals a
+        JOIN predictions p ON a.trade_date = p.target_date
+        ORDER BY a.id DESC LIMIT 1
     """)
     ver_row = cursor.fetchone()
 
@@ -549,21 +615,28 @@ def get_dashboard_data():
     if pred_row:
         pred_data = {
             "target_date": pred_row[0],
-            "baseline_close": pred_row[1],
-            "predicted_open": pred_row[2],
-            "predicted_direction": pred_row[3],
-            "prob_gap_down": pred_row[4],
-            "prob_flat": pred_row[5],
-            "prob_gap_up": pred_row[6],
-            "implied_lower": pred_row[7],
-            "implied_upper": pred_row[8],
-            "vix_close": pred_row[9],
-            "crude_price": pred_row[10] if len(pred_row) > 10 else None,
-            "crude_change_pct": pred_row[11] if len(pred_row) > 11 else None,
-            "usdinr_price": pred_row[12] if len(pred_row) > 12 else None,
-            "usdinr_change_pct": pred_row[13] if len(pred_row) > 13 else None,
-            "event_multiplier": pred_row[14] if len(pred_row) > 14 else 1.0,
-            "event_risk_level": pred_row[15] if len(pred_row) > 15 else "STABLE OVERNIGHT ENVIRONMENT"
+            "initial_1130_baseline": pred_row[1] if pred_row[1] is not None else pred_row[7],
+            "initial_1130_predicted_open": pred_row[2] if pred_row[2] is not None else pred_row[8],
+            "initial_1130_direction": pred_row[3] if pred_row[3] is not None else pred_row[9],
+            "initial_prob_down": pred_row[4] if pred_row[4] is not None else pred_row[10],
+            "initial_prob_flat": pred_row[5] if pred_row[5] is not None else pred_row[11],
+            "initial_prob_up": pred_row[6] if pred_row[6] is not None else pred_row[12],
+            "baseline_close": pred_row[7],
+            "predicted_open": pred_row[8],
+            "predicted_direction": pred_row[9],
+            "prob_gap_down": pred_row[10],
+            "prob_flat": pred_row[11],
+            "prob_gap_up": pred_row[12],
+            "implied_lower": pred_row[13],
+            "implied_upper": pred_row[14],
+            "vix_close": pred_row[15],
+            "crude_price": pred_row[16],
+            "crude_change_pct": pred_row[17],
+            "usdinr_price": pred_row[18],
+            "usdinr_change_pct": pred_row[19],
+            "event_multiplier": pred_row[20] if pred_row[20] is not None else 1.0,
+            "event_risk_level": pred_row[21] if pred_row[21] is not None else "STABLE OVERNIGHT ENVIRONMENT",
+            "created_at": pred_row[22]
         }
 
     ver_data = {}
@@ -597,12 +670,11 @@ def get_prediction_history():
     cursor.execute("""
         SELECT 
             p.target_date,
+            COALESCE(p.initial_1130_baseline, p.baseline_close),
+            COALESCE(p.initial_1130_predicted_open, p.predicted_open),
+            COALESCE(p.initial_1130_direction, p.predicted_direction),
             p.baseline_close,
             p.predicted_open,
-            p.predicted_direction,
-            p.prob_gap_up,
-            p.prob_flat,
-            p.prob_gap_down,
             a.actual_open,
             a.actual_direction,
             a.actual_gap_pct,
@@ -616,29 +688,32 @@ def get_prediction_history():
 
     history = []
     for r in rows:
-        pred_open = r[2]
-        act_open = r[7]
-        pred_dir = r[3]
-        act_dir = r[8]
+        init_base = r[1]
+        init_pred = r[2]
+        init_dir  = r[3]
+        curr_base = r[4]
+        curr_pred = r[5]
+        act_open  = r[6]
+        act_dir   = r[7]
 
-        error_rs = round(abs(pred_open - act_open), 2) if act_open is not None else None
-        hit = (pred_dir == act_dir) if act_dir is not None else None
+        # MAE and Hit computed against the 11:30 AM Official Trade Execution Signal
+        error_rs = round(abs(init_pred - act_open), 2) if act_open is not None and init_pred is not None else None
+        hit = (init_dir == act_dir) if act_dir is not None and init_dir is not None else None
 
         history.append({
             "target_date": r[0],
-            "baseline_close": r[1],
-            "predicted_open": pred_open,
-            "predicted_direction": pred_dir,
-            "prob_up": r[4],
-            "prob_flat": r[5],
-            "prob_down": r[6],
+            "initial_1130_baseline": init_base,
+            "initial_1130_predicted_open": init_pred,
+            "initial_1130_direction": init_dir,
+            "current_baseline": curr_base,
+            "current_predicted_open": curr_pred,
             "actual_open": act_open,
             "actual_direction": act_dir,
-            "actual_gap_pct": r[9],
+            "actual_gap_pct": r[8],
             "error_rs": error_rs,
             "hit": hit,
             "verified": act_open is not None,
-            "created_at": r[10]
+            "created_at": r[9]
         })
 
     return {"history": history}
