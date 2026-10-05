@@ -21,6 +21,13 @@ IST = timezone(timedelta(hours=5, minutes=30))
 def get_ist_now() -> datetime:
     return datetime.now(IST)
 
+def get_next_trading_day(current_dt: datetime) -> str:
+    """Calculates the next valid weekday, skipping weekends."""
+    next_dt = current_dt + timedelta(days=1)
+    while next_dt.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+        next_dt += timedelta(days=1)
+    return next_dt.strftime("%Y-%m-%d")
+
 # Base Directory & Persistent DB Setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = "/tmp/nifty_quant.db" if os.getenv("VERCEL") else os.path.join(BASE_DIR, "nifty_quant.db")
@@ -88,15 +95,12 @@ FEATURE_COLS = [
 ]
 
 class MacroEventEngine:
-    """Detects scheduled central bank policy events, geopolitical shocks, and commodity surges."""
-    
     @staticmethod
     def evaluate_macro_risk(df_raw: pd.DataFrame) -> dict:
         now_ist = get_ist_now()
         day_of_month = now_ist.day
         month = now_ist.month
         
-        # Latest market asset returns
         crude_ret = float(df_raw["Crude_Close"].pct_change().iloc[-1] * 100) if "Crude_Close" in df_raw else 0.0
         usdinr_ret = float(df_raw["USDINR_Close"].pct_change().iloc[-1] * 100) if "USDINR_Close" in df_raw else 0.0
         vix_val = float(df_raw["VIX_Close"].iloc[-1])
@@ -104,29 +108,24 @@ class MacroEventEngine:
         event_multiplier = 1.0
         risk_flags = []
         
-        # 1. Scheduled RBI MPC Policy Days (First week of Feb, Apr, Jun, Aug, Oct, Dec)
         if month in [2, 4, 6, 8, 10, 12] and day_of_month <= 10:
             event_multiplier *= 1.20
             risk_flags.append("RBI MPC Policy Decision Window")
             
-        # 2. US FOMC Rate Decision Window (Mid/Late Month in Mar, May, Jun, Jul, Sep, Nov, Dec)
         if month in [3, 5, 6, 7, 9, 11, 12] and 14 <= day_of_month <= 22:
             event_multiplier *= 1.15
             risk_flags.append("US FOMC Rate Decision Window")
             
-        # 3. Commodity Shock (Crude Oil Spike > 2.0%)
         if crude_ret > 2.0:
             event_multiplier *= 1.25
             risk_flags.append(f"Geopolitical Crude Oil Shock (+{crude_ret:.2f}%)")
         elif crude_ret < -2.0:
             risk_flags.append(f"Crude Oil Deflation Drop ({crude_ret:.2f}%)")
             
-        # 4. FX Volatility Shock (USD/INR Shift > 0.4%)
         if abs(usdinr_ret) > 0.4:
             event_multiplier *= 1.15
             risk_flags.append(f"USD/INR Currency Shift ({usdinr_ret:+.2f}%)")
             
-        # 5. Volatility Regime Spike (VIX > 18.0)
         if vix_val > 18.0:
             event_multiplier *= 1.30
             risk_flags.append(f"High Volatility Regime (VIX {vix_val:.2f})")
@@ -298,7 +297,6 @@ class AdaptiveQuantEngine:
         last_close = float(df_raw["Nifty_Close"].iloc[-1])
         last_vix = float(df_raw["VIX_Close"].iloc[-1])
 
-        # Evaluate Macro & Geopolitical Risk Multiplier
         macro_info = MacroEventEngine.evaluate_macro_risk(df_raw)
 
         probs = self.cls_model.predict_proba(latest_row)[0]
@@ -306,13 +304,13 @@ class AdaptiveQuantEngine:
         pred_gap_pct = float(self.reg_model.predict(latest_row)[0])
 
         predicted_open = round(last_close * (1 + pred_gap_pct / 100), 2)
-        
-        # Apply Macro Volatility Multiplier to Implied Volatility Bounds
         base_daily_sigma = (last_vix / np.sqrt(252)) / 100
         event_adjusted_sigma = base_daily_sigma * macro_info["event_multiplier"]
 
         class_map = {0: "Gap Down", 1: "Flat", 2: "Gap Up"}
-        next_trading_day = (get_ist_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        # Calculate Next Valid Trading Day (Skipping Weekends)
+        next_trading_day = get_next_trading_day(get_ist_now())
         now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
 
         res = {
@@ -354,12 +352,21 @@ class AdaptiveQuantEngine:
         """Executes at 09:30 AM IST right after market open to verify actual gap against prediction."""
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions ORDER BY id DESC LIMIT 1")
+        
+        # Get target date for today's market session
+        today_date_str = get_ist_now().strftime("%Y-%m-%d")
+        
+        cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions WHERE target_date = ? LIMIT 1", (today_date_str,))
         row = cursor.fetchone()
         
         if not row:
+            # Fallback to latest available prediction if exact date match is missing
+            cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions ORDER BY id DESC LIMIT 1")
+            row = cursor.fetchone()
+
+        if not row:
             conn.close()
-            return {"status": "No prediction available to verify."}
+            return {"status": "No target prediction available in database to verify."}
 
         target_date, baseline_close, pred_open, pred_dir = row
 
@@ -367,6 +374,9 @@ class AdaptiveQuantEngine:
         if isinstance(nifty.columns, pd.MultiIndex):
             nifty.columns = nifty.columns.get_level_values(0)
 
+        # Confirm yfinance has published today's opening candle
+        latest_bar_date = nifty.index[-1].strftime("%Y-%m-%d")
+        
         actual_open = float(nifty["Open"].iloc[-1])
         actual_close = float(nifty["Close"].iloc[-1])
         actual_gap_pct = ((actual_open - baseline_close) / baseline_close) * 100
