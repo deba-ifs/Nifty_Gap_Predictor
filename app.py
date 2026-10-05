@@ -153,7 +153,8 @@ class AdaptiveQuantEngine:
         start_date = end_date - timedelta(days=years * 365)
         
         s_date = start_date.strftime("%Y-%m-%d")
-        e_date = end_date.strftime("%Y-%m-%d")
+        # Add +1 day because yfinance 'end' date parameter is EXCLUSIVE!
+        e_date = (end_date + timedelta(days=1)).strftime("%Y-%m-%d")
 
         nifty = yf.download("^NSEI", start=s_date, end=e_date, progress=False)
         vix = yf.download("^INDIAVIX", start=s_date, end=e_date, progress=False)
@@ -278,12 +279,10 @@ class AdaptiveQuantEngine:
 
         now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
 
-        # Deduplication Check: Prevent identical log rows from same training run
         cursor.execute("SELECT id, sample_count, mae_score, enhancement_notes FROM model_logs ORDER BY id DESC LIMIT 1")
         last_log = cursor.fetchone()
 
         if last_log and last_log[1] == self.train_samples and abs(last_log[2] - self.last_train_mae) < 1e-4:
-            # Update existing log entry rather than creating a duplicate row
             last_id, _, _, existing_notes = last_log
             updated_notes = f"{existing_notes} / {notes}" if notes not in existing_notes else existing_notes
             cursor.execute("UPDATE model_logs SET enhancement_notes = ?, logged_at = ? WHERE id = ?", (updated_notes, now_ist, last_id))
@@ -297,18 +296,34 @@ class AdaptiveQuantEngine:
         conn.close()
 
     def auto_self_heal_and_catchup(self):
-        """Reconstructs predictions and verifies actuals automatically whenever database is empty or cold-started."""
+        """Self-healing catchup engine that forces fresh 11:30 AM IST prediction using live mid-session feeds."""
         now_ist = get_ist_now()
+        today_str = now_ist.strftime("%Y-%m-%d")
+        is_weekday = now_ist.weekday() < 5
+        curr_time_minutes = now_ist.hour * 60 + now_ist.minute
 
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM predictions LIMIT 1")
-        has_pred = cursor.fetchone()
-        conn.close()
 
-        if not has_pred:
-            self.predict_next_open()
-            self.verify_yesterday_prediction()
+        # STEP 1: Morning Open Verification Catch-Up (After 09:30 AM IST)
+        if is_weekday and curr_time_minutes >= (9 * 60 + 30):
+            cursor.execute("SELECT id FROM actuals WHERE trade_date = ?", (today_str,))
+            if not cursor.fetchone():
+                self.verify_yesterday_prediction()
+
+        # STEP 2: 11:30 AM IST Prediction Refresh Catch-Up
+        if is_weekday and curr_time_minutes >= (11 * 60 + 30):
+            next_trade_date = get_next_trading_day(now_ist)
+            today_1130_threshold = f"{today_str} 11:30:00 IST"
+
+            cursor.execute("SELECT created_at FROM predictions WHERE target_date = ?", (next_trade_date,))
+            pred_row = cursor.fetchone()
+
+            # Force re-run if no prediction exists OR if existing prediction was generated before 11:30 AM IST today
+            if not pred_row or not pred_row[0] or pred_row[0] < today_1130_threshold:
+                self.predict_next_open()
+
+        conn.close()
 
     def predict_next_open(self) -> dict:
         """Executes prediction using latest available market data."""
