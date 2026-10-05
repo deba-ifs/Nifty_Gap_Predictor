@@ -49,7 +49,9 @@ def init_db():
         implied_lower REAL,
         implied_upper REAL,
         vix_close REAL,
+        crude_price REAL,
         crude_change_pct REAL,
+        usdinr_price REAL,
         usdinr_change_pct REAL,
         event_multiplier REAL,
         event_risk_level TEXT,
@@ -57,6 +59,16 @@ def init_db():
     )
     """)
     
+    # Check and add missing columns if upgrading existing DB
+    cursor.execute("PRAGMA table_info(predictions)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "crude_price" not in columns:
+        try:
+            cursor.execute("ALTER TABLE predictions ADD COLUMN crude_price REAL")
+            cursor.execute("ALTER TABLE predictions ADD COLUMN usdinr_price REAL")
+        except Exception:
+            pass
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS actuals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,9 +113,13 @@ class MacroEventEngine:
         day_of_month = now_ist.day
         month = now_ist.month
         
-        crude_ret = float(df_raw["Crude_Close"].pct_change().iloc[-1] * 100) if "Crude_Close" in df_raw else 0.0
-        usdinr_ret = float(df_raw["USDINR_Close"].pct_change().iloc[-1] * 100) if "USDINR_Close" in df_raw else 0.0
-        vix_val = float(df_raw["VIX_Close"].iloc[-1])
+        crude_price = float(df_raw["Crude_Close"].iloc[-1]) if "Crude_Close" in df_raw and len(df_raw["Crude_Close"]) > 0 else 0.0
+        crude_ret = float(df_raw["Crude_Close"].pct_change().iloc[-1] * 100) if "Crude_Close" in df_raw and len(df_raw["Crude_Close"]) > 1 else 0.0
+        
+        usdinr_price = float(df_raw["USDINR_Close"].iloc[-1]) if "USDINR_Close" in df_raw and len(df_raw["USDINR_Close"]) > 0 else 0.0
+        usdinr_ret = float(df_raw["USDINR_Close"].pct_change().iloc[-1] * 100) if "USDINR_Close" in df_raw and len(df_raw["USDINR_Close"]) > 1 else 0.0
+        
+        vix_val = float(df_raw["VIX_Close"].iloc[-1]) if "VIX_Close" in df_raw and len(df_raw["VIX_Close"]) > 0 else 0.0
         
         event_multiplier = 1.0
         risk_flags = []
@@ -118,9 +134,9 @@ class MacroEventEngine:
             
         if crude_ret > 2.0:
             event_multiplier *= 1.25
-            risk_flags.append(f"Geopolitical Crude Oil Shock (+{crude_ret:.2f}%)")
+            risk_flags.append(f"Geopolitical Brent Crude Shock (+{crude_ret:.2f}%)")
         elif crude_ret < -2.0:
-            risk_flags.append(f"Crude Oil Deflation Drop ({crude_ret:.2f}%)")
+            risk_flags.append(f"Brent Crude Deflation Drop ({crude_ret:.2f}%)")
             
         if abs(usdinr_ret) > 0.4:
             event_multiplier *= 1.15
@@ -136,7 +152,9 @@ class MacroEventEngine:
             "event_multiplier": round(event_multiplier, 2),
             "risk_level": risk_level,
             "risk_flags": risk_flags if risk_flags else ["Standard Trading Conditions"],
+            "crude_price": round(crude_price, 2),
             "crude_ret_1d": round(crude_ret, 2),
+            "usdinr_price": round(usdinr_price, 2),
             "usdinr_ret_1d": round(usdinr_ret, 2)
         }
 
@@ -153,14 +171,13 @@ class AdaptiveQuantEngine:
         start_date = end_date - timedelta(days=years * 365)
         
         s_date = start_date.strftime("%Y-%m-%d")
-        # Add +1 day because yfinance 'end' date parameter is EXCLUSIVE!
         e_date = (end_date + timedelta(days=1)).strftime("%Y-%m-%d")
 
         nifty = yf.download("^NSEI", start=s_date, end=e_date, progress=False)
         vix = yf.download("^INDIAVIX", start=s_date, end=e_date, progress=False)
         spx = yf.download("^GSPC", start=s_date, end=e_date, progress=False)
-        crude = yf.download("CL=F", start=s_date, end=e_date, progress=False)
-        usdinr = yf.download("USDINR=X", start=s_date, end=e_date, progress=False)
+        crude = yf.download("BZ=F", start=s_date, end=e_date, progress=False)  # Brent Crude Oil Continuous Contract
+        usdinr = yf.download("USDINR=X", start=s_date, end=e_date, progress=False) # USD/INR Spot Exchange Rate
 
         for df in [nifty, vix, spx, crude, usdinr]:
             if isinstance(df.columns, pd.MultiIndex):
@@ -295,8 +312,59 @@ class AdaptiveQuantEngine:
         conn.commit()
         conn.close()
 
+    def reconstruct_past_prediction(self, target_date_str: str):
+        """Reconstructs a missed prediction snapshot for target_date_str using historical data prior to that target date."""
+        if self.cls_model is None or self.reg_model is None:
+            self.train_and_enhance(notes="Cold-Start Fit for Reconstruction")
+
+        df_raw = self.fetch_historical_data(years=1)
+        df_prior = df_raw[df_raw.index.strftime("%Y-%m-%d") < target_date_str].copy()
+        
+        if len(df_prior) < 30:
+            return
+
+        df_feat = self.engineer_features(df_prior)
+        latest_row = df_feat[FEATURE_COLS].iloc[[-1]]
+
+        last_close = float(df_prior["Nifty_Close"].iloc[-1])
+        last_vix = float(df_prior["VIX_Close"].iloc[-1])
+
+        macro_info = MacroEventEngine.evaluate_macro_risk(df_prior)
+
+        probs = self.cls_model.predict_proba(latest_row)[0]
+        pred_class = int(self.cls_model.predict(latest_row)[0])
+        pred_gap_pct = float(self.reg_model.predict(latest_row)[0])
+
+        predicted_open = round(last_close * (1 + pred_gap_pct / 100), 2)
+        base_daily_sigma = (last_vix / np.sqrt(252)) / 100
+        event_adjusted_sigma = base_daily_sigma * macro_info["event_multiplier"]
+
+        class_map = {0: "Gap Down", 1: "Flat", 2: "Gap Up"}
+        created_at_str = f"{get_ist_now().strftime('%Y-%m-%d %H:%M:%S IST')} (Backfilled)"
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT OR REPLACE INTO predictions 
+        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_price, crude_change_pct, usdinr_price, usdinr_change_pct, event_multiplier, event_risk_level, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            target_date_str, last_close, predicted_open, class_map[pred_class],
+            round(float(probs[0]), 4), round(float(probs[1]), 4), round(float(probs[2]), 4),
+            round(predicted_open * (1 - event_adjusted_sigma), 2), round(predicted_open * (1 + event_adjusted_sigma), 2),
+            last_vix, macro_info["crude_price"], macro_info["crude_ret_1d"], macro_info["usdinr_price"], macro_info["usdinr_ret_1d"],
+            macro_info["event_multiplier"], macro_info["risk_level"], created_at_str
+        ))
+        conn.commit()
+        conn.close()
+
     def auto_self_heal_and_catchup(self):
-        """Self-healing catchup engine that forces fresh 11:30 AM IST prediction using live mid-session feeds."""
+        """
+        Self-healing catchup engine:
+        1. Ensures today's prediction entry exists (reconstructs if cold-started).
+        2. Executes 09:20 AM IST verification against actual open.
+        3. Forces 11:30 AM IST prediction refresh for next trading session.
+        """
         now_ist = get_ist_now()
         today_str = now_ist.strftime("%Y-%m-%d")
         is_weekday = now_ist.weekday() < 5
@@ -305,13 +373,23 @@ class AdaptiveQuantEngine:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
 
-        # STEP 1: Morning Open Verification Catch-Up (After 09:30 AM IST)
-        if is_weekday and curr_time_minutes >= (9 * 60 + 30):
+        # STEP 1: Morning Verification Catch-Up (Due if Weekday & Time >= 09:20 AM IST)
+        if is_weekday and curr_time_minutes >= (9 * 60 + 20):
             cursor.execute("SELECT id FROM actuals WHERE trade_date = ?", (today_str,))
-            if not cursor.fetchone():
+            act_entry = cursor.fetchone()
+
+            if not act_entry:
+                cursor.execute("SELECT target_date FROM predictions WHERE target_date = ?", (today_str,))
+                pred_entry = cursor.fetchone()
+
+                if not pred_entry:
+                    # Reconstruct today's missing prediction snapshot
+                    self.reconstruct_past_prediction(today_str)
+
+                # Verify actual open
                 self.verify_yesterday_prediction()
 
-        # STEP 2: 11:30 AM IST Prediction Refresh Catch-Up
+        # STEP 2: 11:30 AM IST Prediction Catch-Up
         if is_weekday and curr_time_minutes >= (11 * 60 + 30):
             next_trade_date = get_next_trading_day(now_ist)
             today_1130_threshold = f"{today_str} 11:30:00 IST"
@@ -319,7 +397,6 @@ class AdaptiveQuantEngine:
             cursor.execute("SELECT created_at FROM predictions WHERE target_date = ?", (next_trade_date,))
             pred_row = cursor.fetchone()
 
-            # Force re-run if no prediction exists OR if existing prediction was generated before 11:30 AM IST today
             if not pred_row or not pred_row[0] or pred_row[0] < today_1130_threshold:
                 self.predict_next_open()
 
@@ -362,7 +439,9 @@ class AdaptiveQuantEngine:
             "implied_lower": round(predicted_open * (1 - event_adjusted_sigma), 2),
             "implied_upper": round(predicted_open * (1 + event_adjusted_sigma), 2),
             "vix_close": last_vix,
+            "crude_price": macro_info["crude_price"],
             "crude_change_pct": macro_info["crude_ret_1d"],
+            "usdinr_price": macro_info["usdinr_price"],
             "usdinr_change_pct": macro_info["usdinr_ret_1d"],
             "event_multiplier": macro_info["event_multiplier"],
             "event_risk_level": macro_info["risk_level"],
@@ -374,12 +453,13 @@ class AdaptiveQuantEngine:
         cursor = conn.cursor()
         cursor.execute("""
         INSERT OR REPLACE INTO predictions 
-        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_change_pct, usdinr_change_pct, event_multiplier, event_risk_level, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_price, crude_change_pct, usdinr_price, usdinr_change_pct, event_multiplier, event_risk_level, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             res["target_date"], res["baseline_close"], res["predicted_open"], res["predicted_direction"],
             res["prob_gap_down"], res["prob_flat"], res["prob_gap_up"], res["implied_lower"], res["implied_upper"],
-            res["vix_close"], res["crude_change_pct"], res["usdinr_change_pct"], res["event_multiplier"], res["event_risk_level"], res["created_at"]
+            res["vix_close"], res["crude_price"], res["crude_change_pct"], res["usdinr_price"], res["usdinr_change_pct"],
+            res["event_multiplier"], res["event_risk_level"], res["created_at"]
         ))
         conn.commit()
         conn.close()
@@ -387,15 +467,22 @@ class AdaptiveQuantEngine:
         return res
 
     def verify_yesterday_prediction(self) -> dict:
-        """Executes verification against actual opening price."""
+        """Executes verification against actual opening price at 09:20 AM IST."""
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions ORDER BY id DESC LIMIT 1")
+        
+        today_date_str = get_ist_now().strftime("%Y-%m-%d")
+        
+        cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions WHERE target_date = ? LIMIT 1", (today_date_str,))
         row = cursor.fetchone()
+        
+        if not row:
+            cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions ORDER BY id DESC LIMIT 1")
+            row = cursor.fetchone()
 
         if not row:
             conn.close()
-            return {"status": "No prediction available in database to verify."}
+            return {"status": "No target prediction available in database to verify."}
 
         target_date, baseline_close, pred_open, pred_dir = row
 
@@ -437,7 +524,7 @@ quant_engine = AdaptiveQuantEngine()
 
 if not os.getenv("VERCEL"):
     scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
-    scheduler.add_job(quant_engine.verify_yesterday_prediction, "cron", hour=9, minute=30, id="daily_verification")
+    scheduler.add_job(quant_engine.verify_yesterday_prediction, "cron", hour=9, minute=20, id="daily_verification")
     scheduler.add_job(quant_engine.predict_next_open, "cron", hour=11, minute=30, id="daily_prediction")
     scheduler.start()
 
@@ -458,7 +545,7 @@ def get_dashboard_data():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_change_pct, usdinr_change_pct, event_multiplier, event_risk_level FROM predictions ORDER BY id DESC LIMIT 1")
+    cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_price, crude_change_pct, usdinr_price, usdinr_change_pct, event_multiplier, event_risk_level FROM predictions ORDER BY id DESC LIMIT 1")
     pred_row = cursor.fetchone()
 
     cursor.execute("""
@@ -486,10 +573,12 @@ def get_dashboard_data():
             "implied_lower": pred_row[7],
             "implied_upper": pred_row[8],
             "vix_close": pred_row[9],
-            "crude_change_pct": pred_row[10],
-            "usdinr_change_pct": pred_row[11],
-            "event_multiplier": pred_row[12],
-            "event_risk_level": pred_row[13]
+            "crude_price": pred_row[10] if len(pred_row) > 10 else None,
+            "crude_change_pct": pred_row[11] if len(pred_row) > 11 else None,
+            "usdinr_price": pred_row[12] if len(pred_row) > 12 else None,
+            "usdinr_change_pct": pred_row[13] if len(pred_row) > 13 else None,
+            "event_multiplier": pred_row[14] if len(pred_row) > 14 else 1.0,
+            "event_risk_level": pred_row[15] if len(pred_row) > 15 else "STABLE MACRO ENVIRONMENT"
         }
 
     ver_data = {}

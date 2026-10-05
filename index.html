@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nifty 50 Quant Predictor & Macro Risk Dashboard</title>
+  <title>Nifty 50 Quant Predictor & Transparency Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
   <script>
@@ -32,7 +32,7 @@
       </div>
       <div>
         <h1 class="text-lg font-bold tracking-wide">NIFTY 50 QUANTITATIVE PREDICTOR</h1>
-        <p class="text-xs text-slate-400">Continuous Self-Learning Engine with Macro & Geopolitical Risk Multiplier</p>
+        <p class="text-xs text-slate-400">09:20 AM IST Open Verification & 11:30 AM IST Trade Signal</p>
       </div>
     </div>
 
@@ -78,16 +78,16 @@
 
         <div class="flex justify-between items-center bg-slate-900/60 p-3 rounded-lg border border-slate-800">
           <div>
-            <span class="text-[10px] uppercase text-slate-400">Crude Oil (WTI/Brent)</span>
-            <p id="macroCrudeChange" class="text-sm font-bold text-slate-200 mt-0.5">0.00%</p>
+            <span class="text-[10px] uppercase text-slate-400">Brent Crude Oil (BZ=F)</span>
+            <p id="macroCrudeDisplay" class="text-sm font-bold text-slate-200 mt-0.5">$0.00/bbl (0.00%)</p>
           </div>
           <i class="fa-solid fa-oil-well text-amber-500 text-lg"></i>
         </div>
 
         <div class="flex justify-between items-center bg-slate-900/60 p-3 rounded-lg border border-slate-800">
           <div>
-            <span class="text-[10px] uppercase text-slate-400">USD / INR Rate</span>
-            <p id="macroUsdinrChange" class="text-sm font-bold text-slate-200 mt-0.5">0.00%</p>
+            <span class="text-[10px] uppercase text-slate-400">USD / INR Exchange Rate</span>
+            <p id="macroUsdinrDisplay" class="text-sm font-bold text-slate-200 mt-0.5">₹0.00/$ (0.00%)</p>
           </div>
           <i class="fa-solid fa-dollar-sign text-emerald-500 text-lg"></i>
         </div>
@@ -199,7 +199,7 @@
           </div>
 
           <div class="mt-6 p-3 bg-blue-900/20 border border-blue-800/40 rounded-lg text-xs text-blue-300">
-            <i class="fa-solid fa-circle-info mr-1"></i> Opening actuals ingested at 09:30 AM IST automatically retrain model parameters.
+            <i class="fa-solid fa-circle-info mr-1"></i> Opening actuals ingested at 09:20 AM IST automatically retrain model parameters.
           </div>
         </div>
       </div>
@@ -270,6 +270,56 @@
 
     <!-- TAB 4: DATA, METHODOLOGY & TRANSPARENCY -->
     <div id="tabContentMethodology" class="hidden space-y-8">
+
+      <!-- Live Input Values Cards -->
+      <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
+        <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+          <div>
+            <h3 class="text-base font-bold text-blue-400 flex items-center">
+              <i class="fa-solid fa-table-list mr-2"></i> Live Ingested Benchmark Feeds & Calculation Inputs
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">Exact spot values, rates, and 1-day percentage returns ingested for model calculations.</p>
+          </div>
+          <span class="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-full font-mono">Live Validation Feed</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+          <div class="bg-slate-900/70 p-4 rounded-xl border border-slate-800 space-y-1">
+            <div class="text-slate-400 uppercase text-[10px] font-bold">Brent Crude Oil (BZ=F)</div>
+            <div id="transpBrentPrice" class="text-lg font-black text-amber-400">$0.00 / bbl</div>
+            <div id="transpBrentRet" class="text-xs font-bold text-slate-300">1-Day Change: 0.00%</div>
+            <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-800/80">Primary import benchmark for Indian crude basket.</p>
+          </div>
+
+          <div class="bg-slate-900/70 p-4 rounded-xl border border-slate-800 space-y-1">
+            <div class="text-slate-400 uppercase text-[10px] font-bold">USD / INR Exchange Rate (USDINR=X)</div>
+            <div id="transpUsdinrPrice" class="text-lg font-black text-emerald-400">₹0.00 / USD</div>
+            <div id="transpUsdinrRet" class="text-xs font-bold text-slate-300">1-Day Change: 0.00%</div>
+            <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-800/80">Spot forex rate influencing FII equity flows.</p>
+          </div>
+
+          <div class="bg-slate-900/70 p-4 rounded-xl border border-slate-800 space-y-1">
+            <div class="text-slate-400 uppercase text-[10px] font-bold">India VIX (^INDIAVIX)</div>
+            <div id="transpVixVal" class="text-lg font-black text-purple-400">0.00</div>
+            <div id="transpSigmaVal" class="text-xs font-bold text-slate-300">Daily Sigma: ±0.00%</div>
+            <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-800/80">Volatility standard deviation using Rule of 16.</p>
+          </div>
+
+          <div class="bg-slate-900/70 p-4 rounded-xl border border-slate-800 space-y-1">
+            <div class="text-slate-400 uppercase text-[10px] font-bold">Nifty 50 Baseline Close (^NSEI)</div>
+            <div id="transpBaselineClose" class="text-lg font-black text-blue-400">₹0.00</div>
+            <div class="text-xs font-bold text-slate-300">Spot Baseline ($C_t$)</div>
+            <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-800/80">Previous session closing spot level.</p>
+          </div>
+
+          <div class="bg-slate-900/70 p-4 rounded-xl border border-slate-800 space-y-1">
+            <div class="text-slate-400 uppercase text-[10px] font-bold">Event Volatility Multiplier ($M_t$)</div>
+            <div id="transpMultiplierVal" class="text-lg font-black text-cyan-400">1.00x</div>
+            <div id="transpRiskLevelVal" class="text-xs font-bold text-emerald-400">STABLE MACRO ENVIRONMENT</div>
+            <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-800/80">Dynamic expansion factor for 1-sigma bounds.</p>
+          </div>
+        </div>
+      </div>
       
       <!-- Section 1 -->
       <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
@@ -301,11 +351,11 @@
 
           <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
             <div class="flex justify-between items-center">
-              <span class="font-bold text-xs text-slate-200">Crude Oil (WTI/Brent)</span>
-              <span class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-mono">CL=F</span>
+              <span class="font-bold text-xs text-slate-200">Brent Crude Oil</span>
+              <span class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-mono">BZ=F</span>
             </div>
-            <p class="text-xs text-slate-400">Tracks daily Brent Crude price movement %. Spikes >2.0% trigger an immediate macro risk expansion factor.</p>
-            <div class="text-[11px] text-slate-500">Source: NYMEX Commodity Stream</div>
+            <p class="text-xs text-slate-400">Tracks daily Brent Crude price movement $. Spikes >2.0% trigger an immediate macro risk expansion factor.</p>
+            <div class="text-[11px] text-slate-500">Source: ICE / NYMEX Commodity Stream</div>
           </div>
 
           <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
@@ -385,7 +435,7 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
           <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
             <div class="flex items-center text-emerald-400 font-bold">
-              <i class="fa-solid fa-circle-check mr-2"></i> 09:30 AM IST: Morning Verification
+              <i class="fa-solid fa-circle-check mr-2"></i> 09:20 AM IST: Morning Verification
             </div>
             <p class="text-slate-400">Ingests realized opening price ($O_{actual}$), verifies yesterday's gap prediction, records absolute error, and appends the ground-truth record to SQLite database.</p>
           </div>
@@ -448,12 +498,13 @@
       } else if (tabName === 'methodology') {
         document.getElementById('tabContentMethodology').classList.remove('hidden');
         document.getElementById('tabBtnMethodology').className = activeClass;
+        fetchDashboardData();
       }
     }
 
     function refreshCurrentTab() {
       if (activeTab === 'history') fetchHistoryData();
-      else if (activeTab === 'forecast' || activeTab === 'logs') fetchDashboardData();
+      else fetchDashboardData();
     }
 
     async function fetchDashboardData() {
@@ -469,7 +520,26 @@
           document.getElementById('impliedRange').innerText = `₹${p.implied_lower.toLocaleString()} — ₹${p.implied_upper.toLocaleString()}`;
           document.getElementById('vixVal').innerText = p.vix_close;
 
-          // Macro Risk Metrics
+          // Populate Macro & Transparency values
+          const crudePrice = p.crude_price ? `$${p.crude_price.toFixed(2)}/bbl` : '--';
+          const crudeRet = p.crude_change_pct !== undefined ? `${p.crude_change_pct >= 0 ? '+' : ''}${p.crude_change_pct.toFixed(2)}%` : '0.00%';
+          document.getElementById('macroCrudeDisplay').innerText = `${crudePrice} (${crudeRet})`;
+          document.getElementById('transpBrentPrice').innerText = crudePrice;
+          document.getElementById('transpBrentRet').innerText = `1-Day Change: ${crudeRet}`;
+
+          const usdinrPrice = p.usdinr_price ? `₹${p.usdinr_price.toFixed(2)}/$` : '--';
+          const usdinrRet = p.usdinr_change_pct !== undefined ? `${p.usdinr_change_pct >= 0 ? '+' : ''}${p.usdinr_change_pct.toFixed(2)}%` : '0.00%';
+          document.getElementById('macroUsdinrDisplay').innerText = `${usdinrPrice} (${usdinrRet})`;
+          document.getElementById('transpUsdinrPrice').innerText = usdinrPrice;
+          document.getElementById('transpUsdinrRet').innerText = `1-Day Change: ${usdinrRet}`;
+
+          document.getElementById('transpVixVal').innerText = p.vix_close;
+          const sigmaDaily = ((p.vix_close / Math.sqrt(252))).toFixed(2);
+          document.getElementById('transpSigmaVal').innerText = `Daily Sigma: ±${sigmaDaily}%`;
+          document.getElementById('transpBaselineClose').innerText = `₹${p.baseline_close.toLocaleString()}`;
+          document.getElementById('transpMultiplierVal').innerText = `${p.event_multiplier || 1.0}x`;
+          document.getElementById('transpRiskLevelVal').innerText = p.event_risk_level || 'STABLE MACRO ENVIRONMENT';
+
           if (p.event_risk_level) {
             const riskElem = document.getElementById('macroRiskLevel');
             riskElem.innerText = p.event_risk_level;
@@ -479,16 +549,6 @@
               riskElem.className = "text-sm font-extrabold text-emerald-400 mt-1";
             }
             document.getElementById('macroMultiplier').innerText = `${p.event_multiplier}x`;
-            
-            const crudeElem = document.getElementById('macroCrudeChange');
-            const crudeVal = p.crude_change_pct || 0;
-            crudeElem.innerText = `${crudeVal >= 0 ? '+' : ''}${crudeVal.toFixed(2)}%`;
-            crudeElem.className = crudeVal > 1.5 ? "text-sm font-bold text-rose-400 mt-0.5" : "text-sm font-bold text-slate-200 mt-0.5";
-
-            const usdinrElem = document.getElementById('macroUsdinrChange');
-            const usdinrVal = p.usdinr_change_pct || 0;
-            usdinrElem.innerText = `${usdinrVal >= 0 ? '+' : ''}${usdinrVal.toFixed(2)}%`;
-            usdinrElem.className = usdinrVal > 0.3 ? "text-sm font-bold text-amber-400 mt-0.5" : "text-sm font-bold text-slate-200 mt-0.5";
           }
 
           const badge = document.getElementById('predDirBadge');
