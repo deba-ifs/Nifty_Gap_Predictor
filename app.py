@@ -278,17 +278,27 @@ class AdaptiveQuantEngine:
 
         now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
 
-        cursor.execute(
-            "INSERT INTO model_logs (training_date, sample_count, mae_score, accuracy_score, enhancement_notes, logged_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (now_ist, self.train_samples, self.last_train_mae, self.last_train_acc, live_note, now_ist)
-        )
+        # Deduplication Check: Prevent identical log rows from same training run
+        cursor.execute("SELECT id, sample_count, mae_score, enhancement_notes FROM model_logs ORDER BY id DESC LIMIT 1")
+        last_log = cursor.fetchone()
+
+        if last_log and last_log[1] == self.train_samples and abs(last_log[2] - self.last_train_mae) < 1e-4:
+            # Update existing log entry rather than creating a duplicate row
+            last_id, _, _, existing_notes = last_log
+            updated_notes = f"{existing_notes} / {notes}" if notes not in existing_notes else existing_notes
+            cursor.execute("UPDATE model_logs SET enhancement_notes = ?, logged_at = ? WHERE id = ?", (updated_notes, now_ist, last_id))
+        else:
+            cursor.execute(
+                "INSERT INTO model_logs (training_date, sample_count, mae_score, accuracy_score, enhancement_notes, logged_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (now_ist, self.train_samples, self.last_train_mae, self.last_train_acc, live_note, now_ist)
+            )
+
         conn.commit()
         conn.close()
 
     def auto_self_heal_and_catchup(self):
-        """Reconstructs predictions and verifies actuals automatically whenever the database is empty or cold-started."""
+        """Reconstructs predictions and verifies actuals automatically whenever database is empty or cold-started."""
         now_ist = get_ist_now()
-        today_str = now_ist.strftime("%Y-%m-%d")
 
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -297,7 +307,6 @@ class AdaptiveQuantEngine:
         conn.close()
 
         if not has_pred:
-            # Force generate prediction & verify current session
             self.predict_next_open()
             self.verify_yesterday_prediction()
 
