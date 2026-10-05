@@ -59,16 +59,6 @@ def init_db():
     )
     """)
     
-    # Check and add missing columns if upgrading existing DB
-    cursor.execute("PRAGMA table_info(predictions)")
-    columns = [col[1] for col in cursor.fetchall()]
-    if "crude_price" not in columns:
-        try:
-            cursor.execute("ALTER TABLE predictions ADD COLUMN crude_price REAL")
-            cursor.execute("ALTER TABLE predictions ADD COLUMN usdinr_price REAL")
-        except Exception:
-            pass
-
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS actuals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,6 +99,7 @@ FEATURE_COLS = [
 class MacroEventEngine:
     @staticmethod
     def evaluate_macro_risk(df_raw: pd.DataFrame) -> dict:
+        """Evaluates overnight risk triggers impacting the 12:00 PM T -> 09:20 AM T+1 holding window."""
         now_ist = get_ist_now()
         day_of_month = now_ist.day
         month = now_ist.month
@@ -124,34 +115,39 @@ class MacroEventEngine:
         event_multiplier = 1.0
         risk_flags = []
         
-        if month in [2, 4, 6, 8, 10, 12] and day_of_month <= 10:
-            event_multiplier *= 1.20
-            risk_flags.append("RBI MPC Policy Decision Window")
-            
+        # 1. US FOMC Rate Decision / US CPI Window (Overnight Impact: 18:30 - 23:30 IST)
         if month in [3, 5, 6, 7, 9, 11, 12] and 14 <= day_of_month <= 22:
             event_multiplier *= 1.15
-            risk_flags.append("US FOMC Rate Decision Window")
+            risk_flags.append("US FOMC / Overnight Inflation Window")
             
+        # 2. RBI Policy Positioning Window (Pre-policy overnight sentiment build)
+        if month in [2, 4, 6, 8, 10, 12] and day_of_month <= 10:
+            event_multiplier *= 1.15
+            risk_flags.append("RBI MPC Pre-Policy Overnight Positioning")
+
+        # 3. Overnight Geopolitical Commodity Shock (Brent Crude Surge > 2.0%)
         if crude_ret > 2.0:
             event_multiplier *= 1.25
-            risk_flags.append(f"Geopolitical Brent Crude Shock (+{crude_ret:.2f}%)")
+            risk_flags.append(f"Overnight Brent Crude Shock (+{crude_ret:.2f}%)")
         elif crude_ret < -2.0:
-            risk_flags.append(f"Brent Crude Deflation Drop ({crude_ret:.2f}%)")
+            risk_flags.append(f"Overnight Crude Price Drop ({crude_ret:.2f}%)")
             
+        # 4. Overnight FX Shift (USD/INR Shift > 0.4%)
         if abs(usdinr_ret) > 0.4:
             event_multiplier *= 1.15
-            risk_flags.append(f"USD/INR Currency Shift ({usdinr_ret:+.2f}%)")
+            risk_flags.append(f"Overnight Currency Shift ({usdinr_ret:+.2f}%)")
             
+        # 5. Volatility Regime
         if vix_val > 18.0:
-            event_multiplier *= 1.30
+            event_multiplier *= 1.25
             risk_flags.append(f"High Volatility Regime (VIX {vix_val:.2f})")
             
-        risk_level = "ELEVATED EVENT RISK" if event_multiplier > 1.15 else "STABLE MACRO ENVIRONMENT"
+        risk_level = "ELEVATED OVERNIGHT RISK" if event_multiplier > 1.15 else "STABLE OVERNIGHT ENVIRONMENT"
         
         return {
             "event_multiplier": round(event_multiplier, 2),
             "risk_level": risk_level,
-            "risk_flags": risk_flags if risk_flags else ["Standard Trading Conditions"],
+            "risk_flags": risk_flags if risk_flags else ["Standard Overnight Conditions"],
             "crude_price": round(crude_price, 2),
             "crude_ret_1d": round(crude_ret, 2),
             "usdinr_price": round(usdinr_price, 2),
@@ -176,8 +172,8 @@ class AdaptiveQuantEngine:
         nifty = yf.download("^NSEI", start=s_date, end=e_date, progress=False)
         vix = yf.download("^INDIAVIX", start=s_date, end=e_date, progress=False)
         spx = yf.download("^GSPC", start=s_date, end=e_date, progress=False)
-        crude = yf.download("BZ=F", start=s_date, end=e_date, progress=False)  # Brent Crude Oil Continuous Contract
-        usdinr = yf.download("USDINR=X", start=s_date, end=e_date, progress=False) # USD/INR Spot Exchange Rate
+        crude = yf.download("BZ=F", start=s_date, end=e_date, progress=False)
+        usdinr = yf.download("USDINR=X", start=s_date, end=e_date, progress=False)
 
         for df in [nifty, vix, spx, crude, usdinr]:
             if isinstance(df.columns, pd.MultiIndex):
@@ -313,7 +309,6 @@ class AdaptiveQuantEngine:
         conn.close()
 
     def reconstruct_past_prediction(self, target_date_str: str):
-        """Reconstructs a missed prediction snapshot for target_date_str using historical data prior to that target date."""
         if self.cls_model is None or self.reg_model is None:
             self.train_and_enhance(notes="Cold-Start Fit for Reconstruction")
 
@@ -359,12 +354,6 @@ class AdaptiveQuantEngine:
         conn.close()
 
     def auto_self_heal_and_catchup(self):
-        """
-        Self-healing catchup engine:
-        1. Ensures today's prediction entry exists (reconstructs if cold-started).
-        2. Executes 09:20 AM IST verification against actual open.
-        3. Forces 11:30 AM IST prediction refresh for next trading session.
-        """
         now_ist = get_ist_now()
         today_str = now_ist.strftime("%Y-%m-%d")
         is_weekday = now_ist.weekday() < 5
@@ -383,13 +372,11 @@ class AdaptiveQuantEngine:
                 pred_entry = cursor.fetchone()
 
                 if not pred_entry:
-                    # Reconstruct today's missing prediction snapshot
                     self.reconstruct_past_prediction(today_str)
 
-                # Verify actual open
                 self.verify_yesterday_prediction()
 
-        # STEP 2: 11:30 AM IST Prediction Catch-Up
+        # STEP 2: 11:30 AM IST Prediction Refresh Catch-Up
         if is_weekday and curr_time_minutes >= (11 * 60 + 30):
             next_trade_date = get_next_trading_day(now_ist)
             today_1130_threshold = f"{today_str} 11:30:00 IST"
@@ -403,7 +390,6 @@ class AdaptiveQuantEngine:
         conn.close()
 
     def predict_next_open(self) -> dict:
-        """Executes prediction using latest available market data."""
         if self.cls_model is None or self.reg_model is None:
             self.train_and_enhance(notes="Initialization Cold Start")
 
@@ -467,7 +453,6 @@ class AdaptiveQuantEngine:
         return res
 
     def verify_yesterday_prediction(self) -> dict:
-        """Executes verification against actual opening price at 09:20 AM IST."""
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
@@ -578,7 +563,7 @@ def get_dashboard_data():
             "usdinr_price": pred_row[12] if len(pred_row) > 12 else None,
             "usdinr_change_pct": pred_row[13] if len(pred_row) > 13 else None,
             "event_multiplier": pred_row[14] if len(pred_row) > 14 else 1.0,
-            "event_risk_level": pred_row[15] if len(pred_row) > 15 else "STABLE MACRO ENVIRONMENT"
+            "event_risk_level": pred_row[15] if len(pred_row) > 15 else "STABLE OVERNIGHT ENVIRONMENT"
         }
 
     ver_data = {}

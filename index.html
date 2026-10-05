@@ -71,7 +71,7 @@
       <!-- Macro & Geopolitical Risk Radar Card -->
       <div class="bg-cardbg rounded-xl p-4 border border-bordercol shadow-lg grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
         <div class="md:col-span-1 border-r border-slate-800 pr-4">
-          <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Macro Event Risk Level</span>
+          <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Overnight Event Risk Level</span>
           <p id="macroRiskLevel" class="text-sm font-extrabold text-emerald-400 mt-1">STABLE ENVIRONMENT</p>
           <span class="text-[11px] text-slate-500">Vol Multiplier: <strong id="macroMultiplier" class="text-slate-300">1.00x</strong></span>
         </div>
@@ -271,6 +271,53 @@
     <!-- TAB 4: DATA, METHODOLOGY & TRANSPARENCY -->
     <div id="tabContentMethodology" class="hidden space-y-8">
 
+      <!-- Dedicated Overnight Holding Window Explanation Card -->
+      <div class="bg-cardbg rounded-2xl p-6 border border-amber-500/30 shadow-xl space-y-4 bg-gradient-to-r from-cardbg via-slate-900 to-cardbg">
+        <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+          <div>
+            <h3 class="text-base font-bold text-amber-400 flex items-center">
+              <i class="fa-solid fa-shield-halved mr-2"></i> Overnight Holding Window Architecture (12:00 PM IST → 09:20 AM IST)
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">Scope of exposure, event filtration logic, and overnight gap risk management.</p>
+          </div>
+          <span class="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-full font-mono">21h 20m Holding Duration</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex items-center text-blue-400 font-bold">
+              <i class="fa-solid fa-right-to-bracket mr-2"></i> 1. Entry & Signal Setup (12:00 PM IST)
+            </div>
+            <p class="text-slate-300">Positions are entered at <strong>12:00 PM IST</strong> based on the 11:30 AM IST quant model forecast. The model evaluates live domestic market momentum, options sentiment (PCR), and early offshore cues.</p>
+          </div>
+
+          <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex items-center text-amber-400 font-bold">
+              <i class="fa-solid fa-moon mr-2"></i> 2. Overnight Gap Exposure
+            </div>
+            <p class="text-slate-300">The holding period spans <strong>21 hours and 20 minutes</strong> overnight. During this closed-market block, trades are exposed exclusively to overnight global news, US equity returns, and geopolitical shocks.</p>
+          </div>
+
+          <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex items-center text-emerald-400 font-bold">
+              <i class="fa-solid fa-right-from-bracket mr-2"></i> 3. Exit & Verification (09:20 AM IST)
+            </div>
+            <p class="text-slate-300">Trades are strictly closed at <strong>09:20 AM IST</strong> at market open. All events scheduled <em>after</em> 09:20 AM IST (e.g. 10:00 AM policy speeches) carry <strong>zero risk</strong> and are ignored by the model.</p>
+          </div>
+        </div>
+
+        <div class="p-4 bg-slate-950/80 rounded-xl border border-slate-800/80 text-xs space-y-2">
+          <div class="font-bold text-slate-200 uppercase text-[11px] flex items-center">
+            <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-2"></i> Primary Overnight Threat Vectors Evaluated
+          </div>
+          <ul class="list-disc list-inside space-y-1 text-slate-400 pl-1">
+            <li><strong class="text-slate-200">US Inflation & FOMC Rate Decision Releases (18:30 – 23:30 IST):</strong> Scheduled overnight US macro releases directly shift US futures and S&P 500 closing returns.</li>
+            <li><strong class="text-slate-200">Overnight Brent Crude Oil Spikes (`BZ=F` > +2.0%):</strong> NYMEX/ICE energy market moves occurring while Indian markets are closed impact morning opening sentiment.</li>
+            <li><strong class="text-slate-200">Offshore GIFT Nifty Arbitrage (06:30 – 09:15 AM IST):</strong> Pre-market GIFT Nifty prices incorporate global overnight news prior to the local opening bell.</li>
+          </ul>
+        </div>
+      </div>
+
       <!-- Live Input Values Cards -->
       <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
         <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
@@ -315,7 +362,7 @@
           <div class="bg-slate-900/70 p-4 rounded-xl border border-slate-800 space-y-1">
             <div class="text-slate-400 uppercase text-[10px] font-bold">Event Volatility Multiplier ($M_t$)</div>
             <div id="transpMultiplierVal" class="text-lg font-black text-cyan-400">1.00x</div>
-            <div id="transpRiskLevelVal" class="text-xs font-bold text-emerald-400">STABLE MACRO ENVIRONMENT</div>
+            <div id="transpRiskLevelVal" class="text-xs font-bold text-emerald-400">STABLE OVERNIGHT ENVIRONMENT</div>
             <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-800/80">Dynamic expansion factor for 1-sigma bounds.</p>
           </div>
         </div>
@@ -520,7 +567,6 @@
           document.getElementById('impliedRange').innerText = `₹${p.implied_lower.toLocaleString()} — ₹${p.implied_upper.toLocaleString()}`;
           document.getElementById('vixVal').innerText = p.vix_close;
 
-          // Populate Macro & Transparency values
           const crudePrice = p.crude_price ? `$${p.crude_price.toFixed(2)}/bbl` : '--';
           const crudeRet = p.crude_change_pct !== undefined ? `${p.crude_change_pct >= 0 ? '+' : ''}${p.crude_change_pct.toFixed(2)}%` : '0.00%';
           document.getElementById('macroCrudeDisplay').innerText = `${crudePrice} (${crudeRet})`;
@@ -538,7 +584,7 @@
           document.getElementById('transpSigmaVal').innerText = `Daily Sigma: ±${sigmaDaily}%`;
           document.getElementById('transpBaselineClose').innerText = `₹${p.baseline_close.toLocaleString()}`;
           document.getElementById('transpMultiplierVal').innerText = `${p.event_multiplier || 1.0}x`;
-          document.getElementById('transpRiskLevelVal').innerText = p.event_risk_level || 'STABLE MACRO ENVIRONMENT';
+          document.getElementById('transpRiskLevelVal').innerText = p.event_risk_level || 'STABLE OVERNIGHT ENVIRONMENT';
 
           if (p.event_risk_level) {
             const riskElem = document.getElementById('macroRiskLevel');
