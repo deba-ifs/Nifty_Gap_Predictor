@@ -330,6 +330,17 @@
             <p class="text-slate-300">Trades are strictly closed at <strong>09:20 AM IST</strong> at market open. All events scheduled <em>after</em> 09:20 AM IST (e.g. 10:00 AM policy speeches) carry <strong>zero risk</strong> and are ignored by the model.</p>
           </div>
         </div>
+
+        <div class="p-4 bg-slate-950/80 rounded-xl border border-slate-800/80 text-xs space-y-2">
+          <div class="font-bold text-slate-200 uppercase text-[11px] flex items-center">
+            <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-2"></i> Primary Overnight Threat Vectors Evaluated
+          </div>
+          <ul class="list-disc list-inside space-y-1 text-slate-400 pl-1">
+            <li><strong class="text-slate-200">US Inflation & FOMC Rate Decision Releases (18:30 – 23:30 IST):</strong> Scheduled overnight US macro releases directly shift US futures and S&P 500 closing returns.</li>
+            <li><strong class="text-slate-200">Overnight Brent Crude Oil Spikes (`BZ=F` > +2.0%):</strong> NYMEX/ICE energy market moves occurring while Indian markets are closed impact morning opening sentiment.</li>
+            <li><strong class="text-slate-200">Offshore GIFT Nifty Arbitrage (06:30 – 09:15 AM IST):</strong> Pre-market GIFT Nifty prices incorporate global overnight news prior to the local opening bell.</li>
+          </ul>
+        </div>
       </div>
 
       <!-- Live Input Values Cards -->
@@ -378,6 +389,159 @@
             <div id="transpMultiplierVal" class="text-lg font-black text-cyan-400">1.00x</div>
             <div id="transpRiskLevelVal" class="text-xs font-bold text-emerald-400">STABLE OVERNIGHT ENVIRONMENT</div>
             <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-800/80">Dynamic expansion factor for 1-sigma bounds.</p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Section 1: Ingested Data Sources & Market Feeds -->
+      <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
+        <div class="border-b border-slate-800 pb-3">
+          <h3 class="text-base font-bold text-blue-400 flex items-center">
+            <i class="fa-solid fa-server mr-2"></i> 1. Ingested Data Sources & Market Feeds
+          </h3>
+          <p class="text-xs text-slate-400 mt-1">Multi-asset market indicators ingested daily to capture domestic technicals, volatility, and global overnight cues.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">Nifty 50 Index</span>
+              <span class="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-mono">^NSEI</span>
+            </div>
+            <p class="text-xs text-slate-400">Captures daily OHLCV, 14-day RSI, 1-day/5-day momentum, and Close Location Value (CLV).</p>
+            <div class="text-[11px] text-slate-500">Source: Yahoo Finance API</div>
+          </div>
+
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">India VIX Index</span>
+              <span class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-mono">^INDIAVIX</span>
+            </div>
+            <p class="text-xs text-slate-400">Provides annualized implied volatility. Used to derive Expected Daily Move % via Rule of 16.</p>
+            <div class="text-[11px] text-slate-500">Source: NSE Volatility Index Feed</div>
+          </div>
+
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">Brent Crude Oil</span>
+              <span class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-mono">BZ=F</span>
+            </div>
+            <p class="text-xs text-slate-400">Tracks daily Brent Crude price movement $. Spikes >2.0% trigger an immediate macro risk expansion factor.</p>
+            <div class="text-[11px] text-slate-500">Source: ICE / NYMEX Commodity Stream</div>
+          </div>
+
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">USD / INR Rate</span>
+              <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-mono">USDINR=X</span>
+            </div>
+            <p class="text-xs text-slate-400">Measures rupee weakness. Currency depreciation correlates with Foreign Institutional Investor (FII) net equity outflows.</p>
+            <div class="text-[11px] text-slate-500">Source: Global Forex Stream</div>
+          </div>
+
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">S&P 500 Index</span>
+              <span class="text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded font-mono">^GSPC</span>
+            </div>
+            <p class="text-xs text-slate-400">Captures US overnight market sentiment % change to gauge inter-market global directional cues.</p>
+            <div class="text-[11px] text-slate-500">Source: US Benchmark Feed</div>
+          </div>
+
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">GIFT Nifty Overnight %</span>
+              <span class="text-[10px] bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded font-mono">NSE IX Cue</span>
+            </div>
+            <p class="text-xs text-slate-400">Tracks offshore GIFT Nifty momentum to capture pre-market price expectations.</p>
+            <div class="text-[11px] text-slate-500">Source: Inter-market Futures Stream</div>
+          </div>
+
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">Put-Call Ratio (PCR)</span>
+              <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-mono">Derivatives Skew</span>
+            </div>
+            <p class="text-xs text-slate-400">Measures institutional option sentiment & 5-day EMA trends to identify dynamic hedging pressure.</p>
+            <div class="text-[11px] text-slate-500">Source: Option Chain Stream</div>
+          </div>
+
+          <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-xs text-slate-200">Close Location Value</span>
+              <span class="text-[10px] bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded font-mono">CLV Indicator</span>
+            </div>
+            <p class="text-xs text-slate-400">Calculates close position relative to high-low span: <code>(2C - H - L)/(H - L)</code> to isolate institutional bell buying.</p>
+            <div class="text-[11px] text-slate-500">Source: Quantitative Feature Pipeline</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Prediction Formulas & Event Multiplier -->
+      <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
+        <div class="border-b border-slate-800 pb-3">
+          <h3 class="text-base font-bold text-emerald-400 flex items-center">
+            <i class="fa-solid fa-square-root-variable mr-2"></i> 2. Prediction Formulas & Event Multiplier
+          </h3>
+          <p class="text-xs text-slate-400 mt-1">Mathematical transparency detailing how predicted open prices and event-adjusted 1-sigma bounds are calculated.</p>
+        </div>
+
+        <div class="space-y-4 text-xs">
+          <div class="p-4 bg-slate-900/70 rounded-xl border border-slate-800 space-y-2">
+            <div class="font-bold text-blue-400 uppercase text-[11px]">Step A: Stationary Target Transformation</div>
+            <p class="text-slate-300">To prevent machine learning trees from stalling at historical ceilings, the model forecasts the <strong>stationary gap percentage</strong> ($\hat{g}$):</p>
+            <div class="p-3 bg-slate-950 font-mono text-emerald-400 rounded border border-slate-800 text-center">
+              $\hat{g} = \widehat{\Delta \text{Gap}\%}_{t+1} = f\Big(\text{CLV}_t, \text{VIX}_t, \text{GIFT}_t, \text{PCR}_t, \text{RSI}_t, \text{Crude}_t, \text{USDINR}_t\Big)$
+            </div>
+          </div>
+
+          <div class="p-4 bg-slate-900/70 rounded-xl border border-slate-800 space-y-2">
+            <div class="font-bold text-blue-400 uppercase text-[11px]">Step B: Reconstructing Predicted Opening Price</div>
+            <p class="text-slate-300">The forecast opening price ($\widehat{\text{Open}}_{t+1}$) is calculated from baseline close ($C_t$) and predicted gap return ($\hat{g}$):</p>
+            <div class="p-3 bg-slate-950 font-mono text-emerald-400 rounded border border-slate-800 text-center">
+              $\widehat{\text{Open}}_{t+1} = C_t \times \left(1 + \frac{\hat{g}}{100}\right)$
+            </div>
+          </div>
+
+          <div class="p-4 bg-slate-900/70 rounded-xl border border-slate-800 space-y-2">
+            <div class="font-bold text-blue-400 uppercase text-[11px]">Step C: Event-Adjusted Implied Volatility Channel ($M_t$)</div>
+            <p class="text-slate-300">The daily implied volatility ($\sigma_{daily}$) is multiplied by the active Macro Event Risk Multiplier ($M_t \in [1.0, 1.5]$):</p>
+            <div class="p-3 bg-slate-950 font-mono text-emerald-400 rounded border border-slate-800 text-center">
+              $\sigma_{adjusted} = \left(\frac{\text{India VIX}_t}{\sqrt{252}}\right) \times M_t \quad \longrightarrow \quad \text{Upper} = \widehat{\text{Open}} \times (1 + \sigma_{adj}), \quad \text{Lower} = \widehat{\text{Open}} \times (1 - \sigma_{adj})$
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 3: IST Timeline -->
+      <div class="bg-cardbg rounded-2xl p-6 border border-bordercol shadow-xl space-y-4">
+        <div class="border-b border-slate-800 pb-3">
+          <h3 class="text-base font-bold text-purple-400 flex items-center">
+            <i class="fa-solid fa-timeline mr-2"></i> 3. IST Standardized Timeline & Execution Strategy
+          </h3>
+          <p class="text-xs text-slate-400 mt-1">All daily cron schedules and user signals strictly operate on Indian Standard Time (IST).</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex items-center text-emerald-400 font-bold">
+              <i class="fa-solid fa-circle-check mr-2"></i> 09:20 AM IST: Morning Verification
+            </div>
+            <p class="text-slate-400">Ingests realized opening price ($O_{actual}$), verifies yesterday's gap prediction, records absolute error, and appends the ground-truth record to SQLite database.</p>
+          </div>
+
+          <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex items-center text-blue-400 font-bold">
+              <i class="fa-solid fa-rotate-right mr-2"></i> Daily Auto-Retraining Loop
+            </div>
+            <p class="text-slate-400">Refits the Calibrated HistGradientBoosting models using the updated historical dataset and live realized errors, continuously tuning feature weights.</p>
+          </div>
+
+          <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex items-center text-purple-400 font-bold">
+              <i class="fa-solid fa-bolt mr-2"></i> 11:30 AM IST: Trade Signal Output
+            </div>
+            <p class="text-slate-400">Runs feature engineering on latest mid-session indicators to output tomorrow's forecast prior to your <strong>12:00 PM IST execution window</strong>.</p>
           </div>
         </div>
       </div>

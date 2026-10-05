@@ -28,6 +28,33 @@ def get_next_trading_day(current_dt: datetime) -> str:
         next_dt += timedelta(days=1)
     return next_dt.strftime("%Y-%m-%d")
 
+def get_1130_baseline_price() -> float:
+    """Fetches intraday 15m candle close for ^NSEI at exactly 11:30 AM IST today."""
+    try:
+        df_intra = yf.download("^NSEI", period="5d", interval="15m", progress=False)
+        if isinstance(df_intra.columns, pd.MultiIndex):
+            df_intra.columns = df_intra.columns.get_level_values(0)
+            
+        if not df_intra.empty:
+            if df_intra.index.tz is None:
+                df_intra.index = df_intra.index.tz_localize("UTC").tz_convert("Asia/Kolkata")
+            else:
+                df_intra.index = df_intra.index.tz_convert("Asia/Kolkata")
+            
+            today_str = get_ist_now().strftime("%Y-%m-%d")
+            today_candles = df_intra[df_intra.index.strftime("%Y-%m-%d") == today_str]
+            
+            if not today_candles.empty:
+                candles_at_1130 = today_candles[
+                    (today_candles.index.hour < 11) | 
+                    ((today_candles.index.hour == 11) & (today_candles.index.minute <= 30))
+                ]
+                if not candles_at_1130.empty:
+                    return float(candles_at_1130["Close"].iloc[-1])
+    except Exception:
+        pass
+    return None
+
 # Base Directory & Persistent DB Setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = "/tmp/nifty_quant.db" if os.getenv("VERCEL") else os.path.join(BASE_DIR, "nifty_quant.db")
@@ -65,7 +92,7 @@ def init_db():
     )
     """)
     
-    # DB Schema Auto-Migration for existing databases
+    # Auto schema migration
     cursor.execute("PRAGMA table_info(predictions)")
     columns = [col[1] for col in cursor.fetchall()]
     migration_cols = [
@@ -399,7 +426,7 @@ class AdaptiveQuantEngine:
 
                 self.verify_yesterday_prediction()
 
-        # STEP 2: 11:30 AM IST Prediction Catch-Up
+        # STEP 2: 11:30 AM IST Prediction Refresh Catch-Up
         if is_weekday and curr_time_minutes >= (11 * 60 + 30):
             next_trade_date = get_next_trading_day(now_ist)
             today_1130_threshold = f"{today_str} 11:30:00 IST"
@@ -437,10 +464,13 @@ class AdaptiveQuantEngine:
         next_trading_day = get_next_trading_day(get_ist_now())
         now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
 
+        # Extract EXACT 11:30 AM IST Intraday Baseline Candle Price
+        exact_1130_price = get_1130_baseline_price()
+
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # Check if 11:30 AM official snapshot already exists for this target date
+        # Check if 11:30 AM official snapshot already exists in DB for this target date
         cursor.execute("SELECT initial_1130_baseline, initial_1130_predicted_open, initial_1130_direction, initial_prob_down, initial_prob_flat, initial_prob_up FROM predictions WHERE target_date = ?", (next_trading_day,))
         existing_row = cursor.fetchone()
 
@@ -453,9 +483,9 @@ class AdaptiveQuantEngine:
             init_p_flat = existing_row[4]
             init_p_up = existing_row[5]
         else:
-            # First execution at 11:30 AM -> Lock initial trade benchmark
-            init_base = last_close
-            init_pred = predicted_open
+            # Use exact 11:30 AM candle price if available; fallback to current spot
+            init_base = exact_1130_price if exact_1130_price is not None else last_close
+            init_pred = round(init_base * (1 + pred_gap_pct / 100), 2)
             init_dir = class_map[pred_class]
             init_p_down = round(float(probs[0]), 4)
             init_p_flat = round(float(probs[1]), 4)
@@ -696,7 +726,6 @@ def get_prediction_history():
         act_open  = r[6]
         act_dir   = r[7]
 
-        # MAE and Hit computed against the 11:30 AM Official Trade Execution Signal
         error_rs = round(abs(init_pred - act_open), 2) if act_open is not None and init_pred is not None else None
         hit = (init_dir == act_dir) if act_dir is not None and init_dir is not None else None
 
