@@ -228,9 +228,8 @@ class AdaptiveQuantEngine:
         conds = [
             data["Target_Gap_Pct"] < -data["Adaptive_Threshold"],
             (data["Target_Gap_Pct"] >= -data["Adaptive_Threshold"]) & (data["Target_Gap_Pct"] <= data["Adaptive_Threshold"]),
-            data["Target_Gap_Pct"] > data["Adaptive_Threshold"]
+            data["Target_Gap_Class"] = np.select(conds, [0, 1, 2], default=1)
         ]
-        data["Target_Gap_Class"] = np.select(conds, [0, 1, 2], default=1)
 
         return data
 
@@ -285,6 +284,97 @@ class AdaptiveQuantEngine:
         conn.commit()
         conn.close()
 
+    def reconstruct_past_prediction(self, target_date_str: str):
+        """Reconstructs a missed prediction snapshot for target_date_str using historical data available prior to that date."""
+        if self.cls_model is None or self.reg_model is None:
+            self.train_and_enhance(notes="Cold-Start Fit for Reconstruction")
+
+        df_raw = self.fetch_historical_data(years=1)
+        # Slicing data strictly prior to target_date_str
+        df_prior = df_raw[df_raw.index.strftime("%Y-%m-%d") < target_date_str].copy()
+        
+        if len(df_prior) < 30:
+            return
+
+        df_feat = self.engineer_features(df_prior)
+        latest_row = df_feat[FEATURE_COLS].iloc[[-1]]
+
+        last_close = float(df_prior["Nifty_Close"].iloc[-1])
+        last_vix = float(df_prior["VIX_Close"].iloc[-1])
+
+        macro_info = MacroEventEngine.evaluate_macro_risk(df_prior)
+
+        probs = self.cls_model.predict_proba(latest_row)[0]
+        pred_class = int(self.cls_model.predict(latest_row)[0])
+        pred_gap_pct = float(self.reg_model.predict(latest_row)[0])
+
+        predicted_open = round(last_close * (1 + pred_gap_pct / 100), 2)
+        base_daily_sigma = (last_vix / np.sqrt(252)) / 100
+        event_adjusted_sigma = base_daily_sigma * macro_info["event_multiplier"]
+
+        class_map = {0: "Gap Down", 1: "Flat", 2: "Gap Up"}
+        created_at_str = f"{get_ist_now().strftime('%Y-%m-%d %H:%M:%S IST')} (Catch-Up Backfilled)"
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT OR REPLACE INTO predictions 
+        (target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_change_pct, usdinr_change_pct, event_multiplier, event_risk_level, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            target_date_str, last_close, predicted_open, class_map[pred_class],
+            round(float(probs[0]), 4), round(float(probs[1]), 4), round(float(probs[2]), 4),
+            round(predicted_open * (1 - event_adjusted_sigma), 2), round(predicted_open * (1 + event_adjusted_sigma), 2),
+            last_vix, macro_info["crude_ret_1d"], macro_info["usdinr_ret_1d"], macro_info["event_multiplier"], macro_info["risk_level"], created_at_str
+        ))
+        conn.commit()
+        conn.close()
+
+    def auto_self_heal_and_catchup(self):
+        """
+        Self-healing catch-up manager:
+        Detects if any 09:30 AM IST verification or 11:30 AM IST prediction snapshot was missed.
+        Automatically reconstructs missed timeline snapshots, fetches market open actuals, validates, and stores.
+        """
+        now_ist = get_ist_now()
+        today_str = now_ist.strftime("%Y-%m-%d")
+        is_weekday = now_ist.weekday() < 5
+        curr_hour = now_ist.hour
+        curr_minute = now_ist.minute
+        time_minutes = curr_hour * 60 + curr_minute
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        # STEP 1: VERIFICATION CATCH-UP (Due if Weekday & Time >= 09:30 AM IST)
+        if is_weekday and time_minutes >= (9 * 60 + 30):
+            cursor.execute("SELECT id FROM actuals WHERE trade_date = ?", (today_str,))
+            act_entry = cursor.fetchone()
+
+            if not act_entry:
+                # Check if target prediction exists for today
+                cursor.execute("SELECT target_date FROM predictions WHERE target_date = ?", (today_str,))
+                pred_entry = cursor.fetchone()
+
+                if not pred_entry:
+                    # Missed yesterday's/Friday's prediction! Reconstruct it now.
+                    self.reconstruct_past_prediction(today_str)
+
+                # Execute today's verification
+                self.verify_yesterday_prediction()
+
+        # STEP 2: PREDICTION CATCH-UP (Due if Weekday & Time >= 11:30 AM IST)
+        if is_weekday and time_minutes >= (11 * 60 + 30):
+            next_trade_date = get_next_trading_day(now_ist)
+            cursor.execute("SELECT id FROM predictions WHERE target_date = ?", (next_trade_date,))
+            pred_next = cursor.fetchone()
+
+            if not pred_next:
+                # 11:30 AM IST prediction for next session is missing! Generate it now.
+                self.predict_next_open()
+
+        conn.close()
+
     def predict_next_open(self) -> dict:
         """Executes at 11:30 AM IST to generate signal for 12:00 PM IST trade entry."""
         if self.cls_model is None or self.reg_model is None:
@@ -308,8 +398,6 @@ class AdaptiveQuantEngine:
         event_adjusted_sigma = base_daily_sigma * macro_info["event_multiplier"]
 
         class_map = {0: "Gap Down", 1: "Flat", 2: "Gap Up"}
-        
-        # Calculate Next Valid Trading Day (Skipping Weekends)
         next_trading_day = get_next_trading_day(get_ist_now())
         now_ist = get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
 
@@ -353,14 +441,12 @@ class AdaptiveQuantEngine:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # Get target date for today's market session
         today_date_str = get_ist_now().strftime("%Y-%m-%d")
         
         cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions WHERE target_date = ? LIMIT 1", (today_date_str,))
         row = cursor.fetchone()
         
         if not row:
-            # Fallback to latest available prediction if exact date match is missing
             cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction FROM predictions ORDER BY id DESC LIMIT 1")
             row = cursor.fetchone()
 
@@ -374,9 +460,6 @@ class AdaptiveQuantEngine:
         if isinstance(nifty.columns, pd.MultiIndex):
             nifty.columns = nifty.columns.get_level_values(0)
 
-        # Confirm yfinance has published today's opening candle
-        latest_bar_date = nifty.index[-1].strftime("%Y-%m-%d")
-        
         actual_open = float(nifty["Open"].iloc[-1])
         actual_close = float(nifty["Close"].iloc[-1])
         actual_gap_pct = ((actual_open - baseline_close) / baseline_close) * 100
@@ -427,16 +510,14 @@ app.add_middleware(
 
 @app.get("/api/dashboard-data")
 def get_dashboard_data():
+    # Trigger self-healing catch-up check on every dashboard load/refresh
+    quant_engine.auto_self_heal_and_catchup()
+
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
     cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_change_pct, usdinr_change_pct, event_multiplier, event_risk_level FROM predictions ORDER BY id DESC LIMIT 1")
     pred_row = cursor.fetchone()
-
-    if not pred_row:
-        quant_engine.predict_next_open()
-        cursor.execute("SELECT target_date, baseline_close, predicted_open, predicted_direction, prob_gap_down, prob_flat, prob_gap_up, implied_lower, implied_upper, vix_close, crude_change_pct, usdinr_change_pct, event_multiplier, event_risk_level FROM predictions ORDER BY id DESC LIMIT 1")
-        pred_row = cursor.fetchone()
 
     cursor.execute("""
     SELECT p.target_date, p.predicted_open, a.actual_open, p.predicted_direction, a.actual_direction, a.actual_gap_pct
@@ -494,6 +575,7 @@ def get_dashboard_data():
 
 @app.get("/api/history")
 def get_prediction_history():
+    quant_engine.auto_self_heal_and_catchup()
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("""
@@ -564,4 +646,5 @@ def render_dashboard():
 if __name__ == "__main__":
     import uvicorn
     quant_engine.train_and_enhance(notes="Server Cold Start")
+    quant_engine.auto_self_heal_and_catchup()
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
